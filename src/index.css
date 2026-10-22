@@ -1,0 +1,822 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: #f7f5f2;
+  --surface: #ffffff;
+  --surface-2: #f1eee9;
+  --sidebar: #efece7;
+  --ink: #1f1d1a;
+  --ink-2: #4a4640;
+  --muted: #8a847b;
+  --line: #e4dfd7;
+  --line-strong: #d3ccc1;
+  --accent: #2f5bd3;
+  --ai: #c8633f;
+  --ai-soft: #f8e9e2;
+  --highlight: #fdf0a6;
+  --danger: #c2410c;
+  --shadow: 0 1px 2px rgb(31 29 26 / 0.06), 0 8px 24px -8px rgb(31 29 26 / 0.12);
+  --shadow-lg: 0 2px 6px rgb(31 29 26 / 0.06), 0 24px 48px -12px rgb(31 29 26 / 0.22);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151517;
+    --surface: #1d1d20;
+    --surface-2: #26262a;
+    --sidebar: #19191b;
+    --ink: #ecebe8;
+    --ink-2: #c3c0ba;
+    --muted: #8b8882;
+    --line: #2d2d31;
+    --line-strong: #3b3b40;
+    --accent: #7ea2ff;
+    --ai: #e48a66;
+    --ai-soft: #3a2620;
+    --highlight: rgb(250 204 21 / 0.22);
+    --danger: #f97316;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 48px -12px rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #151517;
+  --surface: #1d1d20;
+  --surface-2: #26262a;
+  --sidebar: #19191b;
+  --ink: #ecebe8;
+  --ink-2: #c3c0ba;
+  --muted: #8b8882;
+  --line: #2d2d31;
+  --line-strong: #3b3b40;
+  --accent: #7ea2ff;
+  --ai: #e48a66;
+  --ai-soft: #3a2620;
+  --highlight: rgb(250 204 21 / 0.22);
+  --danger: #f97316;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-sidebar: var(--sidebar);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-danger: var(--danger);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata Variable", Georgia, serif;
+  --shadow-soft: var(--shadow);
+  --shadow-float: var(--shadow-lg);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Your own selection is neutral, so it never looks like someone else's. */
+::selection {
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Document typography                                                 */
+/* ------------------------------------------------------------------ */
+
+.doc {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  line-height: 1.75;
+  color: var(--ink);
+  outline: none;
+  min-height: 50vh;
+  padding-bottom: 40vh;
+  caret-color: var(--ink);
+}
+
+.doc > * + * {
+  margin-top: 0.85em;
+}
+
+.doc p.is-editor-empty:first-child::before,
+.doc .is-empty.has-focus::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.doc h1,
+.doc h2,
+.doc h3 {
+  font-family: var(--font-serif);
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+.doc h1 {
+  font-size: 1.75rem;
+  font-weight: 650;
+  margin-top: 1.6em;
+}
+.doc h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-top: 1.4em;
+}
+.doc h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1.2em;
+}
+.doc > :first-child {
+  margin-top: 0;
+}
+
+.doc a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.doc strong {
+  font-weight: 650;
+}
+
+.doc mark {
+  background: var(--highlight);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.doc mark a,
+.doc a mark {
+  color: var(--ink);
+  text-decoration-color: var(--accent);
+}
+
+.doc code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+
+.doc pre {
+  background: #1b1b1e;
+  color: #e9e7e2;
+  border-radius: 10px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.doc pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.doc blockquote {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 1.1em;
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+.doc hr {
+  border: 0;
+  height: 1px;
+  background: var(--line-strong);
+  margin: 2em 0;
+}
+.doc hr.ProseMirror-selectednode {
+  background: var(--accent);
+}
+
+.doc ul,
+.doc ol {
+  padding-left: 1.5em;
+}
+.doc ul {
+  list-style: disc;
+}
+.doc ol {
+  list-style: decimal;
+}
+.doc li > p {
+  margin: 0;
+}
+.doc li + li {
+  margin-top: 0.3em;
+}
+.doc li::marker {
+  color: var(--muted);
+}
+
+.doc ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.doc ul[data-type="taskList"] li {
+  display: flex;
+  gap: 0.6em;
+  align-items: flex-start;
+}
+.doc ul[data-type="taskList"] li > label {
+  flex: none;
+  margin-top: 0.32em;
+  user-select: none;
+}
+.doc ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.doc ul[data-type="taskList"] input[type="checkbox"] {
+  appearance: none;
+  width: 1.05em;
+  height: 1.05em;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 5px;
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  background: var(--surface);
+  transition: background 0.15s, border-color 0.15s;
+}
+.doc ul[data-type="taskList"] input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.doc ul[data-type="taskList"] input[type="checkbox"]:checked::after {
+  content: "";
+  width: 0.55em;
+  height: 0.3em;
+  border-left: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+.doc ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
+}
+
+/* Collaborator cursors. The name shows when they move, then shrinks to a
+   small colored cap so it doesn't cover the line above. */
+.remote-caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid var(--c);
+  pointer-events: none;
+  word-break: normal;
+}
+.remote-caret::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--c);
+}
+.remote-caret > span {
+  position: absolute;
+  top: -1.5em;
+  left: -2px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1;
+  white-space: nowrap;
+  color: white;
+  background: var(--c);
+  padding: 3px 6px;
+  border-radius: 6px 6px 6px 0;
+  user-select: none;
+  transform-origin: bottom left;
+  animation: caret-label 2.8s forwards;
+}
+@keyframes caret-label {
+  0%,
+  85% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+.remote-selection {
+  background: color-mix(in srgb, var(--c) 28%, transparent);
+  box-shadow: inset 0 -2px 0 var(--c);
+}
+
+/* Where Claude just edited (fades out), and the passage quoted in the
+   Claude composer while focus is in the chat box. */
+.ai-flash {
+  animation: ai-flash 8s ease-out forwards;
+  border-radius: 2px;
+}
+@keyframes ai-flash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--ai) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.pending-selection {
+  background: color-mix(in srgb, var(--ai) 18%, transparent);
+  border-radius: 2px;
+}
+
+/* Where dictated words will land (editor/dictation.ts), and the dictation
+   button's ring, which grows with the microphone level. */
+.dictation-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0 0.2em;
+  padding: 0 0.6em 0 0.5em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-family: var(--font-sans);
+  font-size: 0.75em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.7;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+  user-select: none;
+}
+.dictation-marker::before {
+  content: "";
+  box-sizing: border-box;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dictation-pulse 1.2s ease-in-out infinite;
+}
+.dictation-marker[data-phase="transcribing"] {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.dictation-marker[data-phase="transcribing"]::before {
+  width: 0.8em;
+  height: 0.8em;
+  background: none;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  animation: dictation-spin 0.8s linear infinite;
+}
+@keyframes dictation-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@keyframes dictation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mic-live {
+  box-shadow: 0 0 0 calc(var(--level, 0) * 7px) color-mix(in srgb, var(--danger) 30%, transparent);
+  transition: box-shadow 80ms linear;
+}
+
+/* AI-generated markdown in the chat panel */
+.chat-md {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.chat-md > * + * {
+  margin-top: 0.6em;
+}
+.chat-md ul {
+  list-style: disc;
+  padding-left: 1.2em;
+}
+.chat-md ol {
+  list-style: decimal;
+  padding-left: 1.2em;
+}
+.chat-md strong {
+  font-weight: 600;
+}
+.chat-md code {
+  font-size: 0.85em;
+  background: var(--surface-2);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+.chat-md a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.chat-md h1,
+.chat-md h2,
+.chat-md h3 {
+  font-weight: 650;
+}
+.chat-md blockquote {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 0.8em;
+  color: var(--ink-2);
+}
+
+/* Version diff */
+.diff ins {
+  background: color-mix(in srgb, #22c55e 22%, transparent);
+  text-decoration: none;
+  border-radius: 3px;
+}
+.diff del {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  color: var(--ink-2);
+  text-decoration-color: color-mix(in srgb, #ef4444 70%, transparent);
+  border-radius: 3px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.typing-dot {
+  animation: pulse-dot 1.2s infinite ease-in-out;
+}
+
+@keyframes sparkle {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: rotate(18deg) scale(1.15);
+    opacity: 0.7;
+  }
+}
+.sparkle-spin {
+  animation: sparkle 1.6s ease-in-out infinite;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.toast-in {
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.pop-in {
+  animation: pop-in 0.12s ease-out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Chat (panels/ChatPanel.tsx, editor/chatRefs.ts)                     */
+/* ------------------------------------------------------------------ */
+
+/* Passages quoted in the chat, tinted in the quoter's color while the chat
+   is open; the message under the pointer deepens its passage's tint. */
+.chat-ref {
+  background: color-mix(in srgb, var(--c) 9%, transparent);
+  box-shadow: inset 0 -1.5px 0 color-mix(in srgb, var(--c) 45%, transparent);
+  border-radius: 2px;
+}
+.chat-ref.is-active {
+  background: color-mix(in srgb, var(--c) 24%, transparent);
+  box-shadow: inset 0 -2px 0 var(--c);
+  animation: chat-ref-in 0.25s ease-out;
+}
+@keyframes chat-ref-in {
+  from {
+    background: color-mix(in srgb, var(--c) 9%, transparent);
+  }
+}
+/* The passage quoted in the chat box. */
+.chat-ref-draft {
+  background: color-mix(in srgb, var(--c) 20%, transparent);
+  box-shadow: inset 0 -2px 0 var(--c);
+  border-radius: 2px;
+  animation: chat-ref-breathe 2.4s ease-in-out infinite;
+}
+@keyframes chat-ref-breathe {
+  50% {
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+  }
+}
+/* A passage opened from the chat. */
+.chat-ref-flash {
+  border-radius: 3px;
+  animation: chat-ref-flash 2.6s ease-out forwards;
+}
+@keyframes chat-ref-flash {
+  0% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+  12%,
+  40% {
+    background: color-mix(in srgb, var(--c) 38%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 38%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+/* A message arriving: rises from below and settles with a little overshoot,
+   growing from the sender's side. */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.9);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.msg-in {
+  animation: msg-in 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+}
+@keyframes jumbo-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(-12deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.18) rotate(4deg);
+  }
+  to {
+    transform: none;
+  }
+}
+.jumbo-in {
+  animation: jumbo-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+}
+
+/* Reply / copy / delete beside a bubble, on hover, keyboard focus, or a tap. */
+.msg-actions {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px) scale(0.92);
+  transition:
+    opacity 0.15s ease,
+    transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+.msg:hover .msg-actions,
+.msg:focus-within .msg-actions,
+.msg.is-selected .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+@media (hover: none) {
+  .msg:hover:not(.is-selected) .msg-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* A quoted passage inside a bubble. */
+.passage {
+  background: color-mix(in srgb, var(--c) 13%, transparent);
+  box-shadow: inset 3px 0 0 var(--c);
+  transition: background 0.15s ease;
+}
+.passage:not(.is-missing):hover {
+  background: color-mix(in srgb, var(--c) 21%, transparent);
+}
+.passage.is-missing {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+.typing-bounce {
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+
+.send-button {
+  transition:
+    opacity 0.2s ease,
+    transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+.send-button:not(.is-ready) {
+  transform: scale(0.88);
+}
+.send-button.is-ready:hover {
+  transform: translateY(-1px) scale(1.05);
+}
+.send-button.is-ready:active {
+  transform: scale(0.92);
+}
+
+@keyframes chat-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.9);
+  }
+}
+.chat-pop {
+  animation: chat-pop 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.badge-pop {
+  animation: badge-pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes new-line-in {
+  from {
+    opacity: 0;
+    letter-spacing: 0.3em;
+  }
+}
+.chat-new-line {
+  animation: new-line-in 0.6s ease-out;
+}
+
+/* The empty chat's two bubbles bob out of step. */
+@keyframes float {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.float-a {
+  animation: float 3.2s ease-in-out infinite;
+}
+.float-b {
+  animation: float 3.2s ease-in-out 1.6s infinite;
+}
+
+/* Collapse (components/Collapse.tsx): slides open from nothing. */
+.slide-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.2s ease;
+}
+.slide-reveal[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+@starting-style {
+  .slide-reveal[data-open="true"] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+/* Side panels: content fades in when switching, and the narrow-screen
+   drawer slides in. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+.panel-in {
+  animation: panel-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes panel-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+.panel-slide-in {
+  animation: panel-slide-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-in,
+  .jumbo-in,
+  .chat-pop,
+  .badge-pop,
+  .chat-new-line,
+  .float-a,
+  .float-b,
+  .panel-in,
+  .panel-slide-in,
+  .chat-ref-draft,
+  .typing-bounce {
+    animation: none;
+  }
+  .slide-reveal,
+  .msg-actions,
+  .send-button {
+    transition: none;
+  }
+}

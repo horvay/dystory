@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.convex/
+.ai-workspace
+*.log
+.stt/
+data/

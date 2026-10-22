@@ -1,0 +1,18 @@
+[Unit]
+Description=Dystory (~/.t3/projects/dystory): Convex, web, media, gate, dictation, script assistant, director
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/horvay/.t3/projects/dystory
+# /usr/bin comes first so `node` is the system one (mise's shim has no node
+# configured globally). ~/.local/bin has b70-lease and omp-browser-tab for the
+# director's jobs; mise's shims stay last.
+Environment=PATH=/usr/bin:/usr/local/bin:/bin:/home/horvay/.local/bin:/home/horvay/.local/share/mise/installs/claude/latest:/home/horvay/.local/share/mise/installs/gh/latest/gh_2.102.0_linux_amd64/bin:/home/horvay/.local/share/mise/shims
+ExecStart=/usr/bin/bun run start
+Restart=on-failure
+RestartSec=5
+# Background jobs the director starts run in their own transient units
+# (dystory-*), so stopping this service doesn't kill a render.
+
+[Install]
+WantedBy=default.target
