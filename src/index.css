@@ -820,3 +820,73 @@ button {
     transition: none;
   }
 }
+
+/* The story's decision bar when something waits on people: a soft glow that
+   breathes for a few seconds, then holds. */
+@keyframes decision-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px var(--glow), 0 0 26px 2px var(--glow);
+  }
+  50% {
+    box-shadow: 0 0 0 7px var(--glow), 0 0 40px 8px var(--glow);
+  }
+}
+.decision-glow,
+.decision-glow-amber {
+  --glow: color-mix(in oklab, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 4px var(--glow), 0 0 26px 2px var(--glow);
+  animation: decision-breathe 2.4s ease-in-out 4;
+}
+.decision-glow-amber {
+  --glow: rgb(245 158 11 / 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-glow,
+  .decision-glow-amber {
+    animation: none;
+  }
+}
+
+/* "Show me": the request card flashes once when the thread scrolls to it. */
+@keyframes request-flash {
+  0%,
+  100% {
+    background: var(--surface);
+  }
+  30% {
+    background: color-mix(in oklab, var(--accent) 14%, var(--surface));
+  }
+}
+.request-flash {
+  animation: request-flash 1.4s ease-out;
+}
+
+/* A cut paused partway in the thread: "Add a note at 0:45" pulses a few times. */
+@keyframes note-ready {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 0%, transparent);
+  }
+}
+.note-ready {
+  animation: note-ready 1.4s ease-out 3;
+}
+@media (prefers-reduced-motion: reduce) {
+  .note-ready {
+    animation: none;
+  }
+}
+
+/* Phones: iOS zooms the page into any text box under 16px when it's tapped,
+   and leaves it zoomed. 16px boxes don't trigger it. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

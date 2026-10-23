@@ -86,7 +86,7 @@ export const STUDIO_TOOLS = [
   ),
   studioTool(
     "post_cut",
-    "Post a video file (MP4, H.264) as the story's next cut on its Review tab. Write a summary of what this cut is and what changed since the last one; people read it next to the player.",
+    "Post a video file (MP4, H.264) as the story's next cut. It plays in the story's thread (and the next review card) and on the Review tab. Write a summary of what this cut is and what changed since the last one; people read it under the player.",
     {
       path: z.string().describe("Path to the MP4, absolute or relative to the story folder"),
       summary: z.string().describe("What this cut is and what changed"),
@@ -99,15 +99,15 @@ export const STUDIO_TOOLS = [
   ),
   studioTool(
     "post_image",
-    "Post an image (still, character sheet, thumbnail) to the story's Images tab, where people can pin comments on it. The caption says what it is (shot id, seed, purpose).",
+    "Post an image (still, character sheet, thumbnail). It shows in the story's thread under this turn (and in the next review card) and on the Images tab, where people can pin comments on it. The caption says what it is in plain words (\"Shot 3, option B: Gary laughing\"); it's what people see under the image. Returns the image id.",
     {
       path: z.string().describe("Path to a JPEG, PNG or WebP, absolute or relative to the story folder"),
       caption: z.string().optional(),
     },
     async (ctx, { path, caption }) => {
       const img = await uploadImage(existing(ctx, path));
-      await ctx.convex.mutation(api.director.addImage, { turnId: ctx.turnId, caption, ...img });
-      return `Posted ${img.fileName} (${img.width}x${img.height}) to the Images tab.`;
+      const id = await ctx.convex.mutation(api.director.addImage, { turnId: ctx.turnId, caption, ...img });
+      return `Posted ${img.fileName} (${img.width}x${img.height}) as image ${id}.`;
     },
   ),
   studioTool(
@@ -148,10 +148,14 @@ export const STUDIO_TOOLS = [
   ),
   studioTool(
     "request_review",
-    "Hand the stage's work to people for review: the story shows as ready for review with your message. Call it after posting the cut or images, as the last thing in the turn.",
-    { message: z.string().describe("One line: what's ready and what to look at") },
-    async (ctx, { message }) => {
-      await ctx.convex.mutation(api.director.requestReview, { turnId: ctx.turnId, message });
+    "Hand the stage's work to people for review. It becomes a card in the story's thread with your message as its heading, showing what you posted since your last request (the newest cut and every image), with Approve and Not good buttons. Call it after posting, as the last thing in the turn.",
+    {
+      message: z.string().describe("One line: what's ready and what to decide"),
+      cuts: z.array(z.number()).optional().describe("Show these cut numbers instead of what was posted since the last request"),
+      images: z.array(z.string()).optional().describe("Show these image ids (from post_image) instead"),
+    },
+    async (ctx, { message, cuts, images }) => {
+      await ctx.convex.mutation(api.director.requestReview, { turnId: ctx.turnId, message, cuts, images });
       return "The story is waiting for review. End your turn now.";
     },
   ),
@@ -251,7 +255,7 @@ export const STUDIO_TOOLS = [
 
 export const STUDIO_TOOL_NAMES = STUDIO_TOOLS.map((t) => `mcp__studio__${t.name}`);
 
-/** The activity line shown in the Director panel for a tool call. */
+/** The activity line shown in the story's thread for a tool call. */
 export function studioLabel(name: string, input: Record<string, unknown>): string | null {
   const s = (k: string) => String(input[k] ?? "");
   switch (name) {

@@ -1,5 +1,7 @@
+import { useQuery } from "convex/react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Route, Switch, useLocation } from "wouter";
+import { api } from "../../convex/_generated/api";
 import { useMe } from "../lib/identity";
 import { useMediaQuery, cn } from "../lib/hooks";
 import { useNotificationClicks } from "../lib/notifications";
@@ -24,6 +26,8 @@ export function Shell({ onSwitchUser }: { onSwitchUser: () => void }) {
   const [sidebarOpen, setSidebarOpen] = useState(isWide);
   const [location] = useLocation();
   useNotificationClicks();
+  useWaitingTitle();
+  useScrollClosesKeyboard();
 
   useEffect(() => setSidebarOpen(isWide), [isWide]);
   // On narrow screens the sidebar is a drawer; close it after navigating.
@@ -100,6 +104,32 @@ export function Shell({ onSwitchUser }: { onSwitchUser: () => void }) {
       </ToastProvider>
     </Ctx.Provider>
   );
+}
+
+/**
+ * On a phone, dragging the page to scroll closes the keyboard, like a chat
+ * app. Scrolling inside the box being typed in doesn't.
+ */
+function useScrollClosesKeyboard() {
+  useEffect(() => {
+    const onMove = (e: TouchEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || !(el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable)) return;
+      if (e.target instanceof Node && el.contains(e.target)) return;
+      el.blur();
+    };
+    window.addEventListener("touchmove", onMove, { passive: true });
+    return () => window.removeEventListener("touchmove", onMove);
+  }, []);
+}
+
+/** "(2) Dystory" in the tab while stories wait on people. */
+function useWaitingTitle() {
+  const stories = useQuery(api.stories.list, {});
+  const n = stories?.filter((s) => s.state === "review" || s.state === "waiting").length ?? 0;
+  useEffect(() => {
+    document.title = n ? `(${n}) Dystory` : "Dystory";
+  }, [n]);
 }
 
 /** Your avatar in a page header: profile, appearance, switching person. */

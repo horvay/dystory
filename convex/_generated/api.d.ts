@@ -22,6 +22,7 @@ import type * as images from "../images.js";
 import type * as notes from "../notes.js";
 import type * as presence from "../presence.js";
 import type * as push from "../push.js";
+import type * as requests from "../requests.js";
 import type * as snapshots from "../snapshots.js";
 import type * as stories from "../stories.js";
 import type * as sync from "../sync.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   notes: typeof notes;
   presence: typeof presence;
   push: typeof push;
+  requests: typeof requests;
   snapshots: typeof snapshots;
   stories: typeof stories;
   sync: typeof sync;

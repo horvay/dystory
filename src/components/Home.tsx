@@ -14,6 +14,7 @@ import { useShell } from "./Shell";
 import { useCreateDoc } from "./useCreateDoc";
 import { NewStoryDialog, StageChip } from "../story/stageUi";
 import { timecode } from "../lib/time";
+import { stageInfo } from "../../shared/stages";
 
 export function Home() {
   const me = useMe();
@@ -70,6 +71,8 @@ export function Home() {
           {greeting}, {me.name.split(" ")[0]}.
         </h1>
         <p className="mt-2 text-muted">What are we working on?</p>
+
+        <WaitingOnYou stories={stories} />
 
         <h2 className="mt-9 mb-3 text-[11px] font-semibold tracking-wider text-muted uppercase">Stories</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -222,6 +225,51 @@ export function Home() {
 }
 
 type StoryItem = NonNullable<ReturnType<typeof useQuery<typeof api.stories.list>>>[number];
+
+/** Stories the director handed back: one row each, straight to what it wants looked at. */
+function WaitingOnYou({ stories }: { stories: StoryItem[] | undefined }) {
+  const waiting = stories?.filter((s) => s.state === "review" || s.state === "waiting") ?? [];
+  if (!waiting.length) return null;
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-[11px] font-semibold tracking-wider text-accent uppercase">Waiting on you</h2>
+      <div className="space-y-2">
+        {waiting.map((st) => {
+          const cover = st.latestFileId ? `/media/thumbs/${st.latestFileId}.jpg` : st.coverThumb && `/media/images/${st.coverThumb}`;
+          const review = st.state === "review";
+          return (
+            <Link
+              key={st._id}
+              href={`/s/${st._id}/thread`}
+              className={cn(
+                "flex items-center gap-3 rounded-2xl border bg-surface p-2.5 transition hover:shadow-soft",
+                review ? "border-accent/40" : "border-amber-500/40",
+              )}
+            >
+              <span className="h-14 w-24 shrink-0 overflow-hidden rounded-xl bg-[#0b0b0c]">
+                {cover && <img src={cover} alt="" className="size-full object-cover" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{st.title}</span>
+                <span className="block truncate text-sm text-muted">
+                  {stageInfo(st.stage).label}: {st.statusLine || (review ? "ready for review" : "the director needs you")}
+                </span>
+              </span>
+              <span
+                className={cn(
+                  "shrink-0 rounded-xl px-3.5 py-2 text-sm font-semibold text-white",
+                  review ? "bg-accent" : "bg-amber-500",
+                )}
+              >
+                {review ? "Review" : "Answer"}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function StoryCard({ story, now }: { story: StoryItem; now: number }) {
   const [thumbOk, setThumbOk] = useState(true);

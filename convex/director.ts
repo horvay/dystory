@@ -10,6 +10,7 @@ import { applyEdits, docMarkdown } from "./ai";
 import { directorUser } from "./bots";
 import { fileInfo } from "./schema";
 import { takeSnapshot } from "./snapshots";
+import { openRequest } from "./requests";
 import { queueTurn } from "./turns";
 
 // ---------------------------------------------------------------------------
@@ -288,13 +289,21 @@ export const setStatus = mutation({
 });
 
 export const requestReview = mutation({
-  args: { turnId: v.id("turns"), message: v.string() },
-  handler: async (ctx, { turnId, message }) => {
+  args: {
+    turnId: v.id("turns"),
+    message: v.string(),
+    // What to show; by default everything posted since the last request.
+    cuts: v.optional(v.array(v.number())),
+    images: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, { turnId, message, cuts, images }) => {
     const { story } = await runningTurn(ctx, turnId);
+    const line = clean(message, 300) || `${stageInfo(story.stage).label} is ready for review`;
+    await openRequest(ctx, story, turnId, "review", line, { cuts, images });
     await ctx.db.patch(story._id, {
       state: "review",
       stateSet: true,
-      statusLine: clean(message, 300) || `${stageInfo(story.stage).label} is ready for review`,
+      statusLine: line,
       updatedAt: Date.now(),
     });
   },
@@ -304,6 +313,7 @@ export const askUser = mutation({
   args: { turnId: v.id("turns"), question: v.string() },
   handler: async (ctx, { turnId, question }) => {
     const { story } = await runningTurn(ctx, turnId);
+    await openRequest(ctx, story, turnId, "question", clean(question, 1000));
     await ctx.db.patch(story._id, {
       state: "waiting",
       stateSet: true,
@@ -458,6 +468,7 @@ export const addVersion = mutation({
       uploadedBy: userId,
       stage: story.stage,
       summary: clean(summary, 2000) || undefined,
+      turnId,
       ...file,
     });
     await ctx.db.patch(video._id, {
@@ -491,6 +502,7 @@ export const addImage = mutation({
       uploadedBy: userId,
       fileName: fileName.slice(0, 200),
       caption: caption ? clean(caption, 300) : undefined,
+      turnId,
       ...rest,
     });
   },

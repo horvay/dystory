@@ -56,7 +56,7 @@ export const stageState = v.union(...STAGE_STATES.map((s) => v.literal(s)));
 
 // What started a turn of the production AI.
 export const turnKind = v.union(
-  v.literal("message"), // someone wrote to it in the Director panel
+  v.literal("message"), // someone wrote to it in the story's thread
   v.literal("stage"), // a stage started (approval, or a move back)
   v.literal("feedback"), // a batch of review comments
   v.literal("wake"), // a background job it was waiting on finished, or a timer
@@ -220,6 +220,8 @@ export default defineSchema({
     // what changed since the last cut.
     stage: v.optional(stage),
     summary: v.optional(v.string()),
+    // The director turn that posted it, so the story's thread shows it there.
+    turnId: v.optional(v.id("turns")),
     ...fileInfo,
   }).index("by_video", ["videoId", "number"]),
 
@@ -262,6 +264,8 @@ export default defineSchema({
     height: v.number(),
     // What the production AI says the image is ("k07 still, seed 3").
     caption: v.optional(v.string()),
+    // The director turn that posted it, so the story's thread shows it there.
+    turnId: v.optional(v.id("turns")),
   }).index("by_video", ["videoId"]),
 
   imageComments: defineTable({
@@ -316,7 +320,7 @@ export default defineSchema({
     kind: turnKind,
     // What the AI is sent.
     prompt: v.string(),
-    // What the Director panel shows for it (the message, or "Voice-over started").
+    // What the thread shows for it (the message, or "Voice-over started").
     display: v.string(),
     requestedBy: v.optional(v.id("users")),
     status: aiStatus,
@@ -327,9 +331,35 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
     // A turn picking up after restarts cut off the one before: how many in a row.
     resumes: v.optional(v.number()),
+    // The story's stage when the turn was queued, for the thread's stage dividers.
+    stage: v.optional(stage),
   })
     .index("by_story", ["storyId"])
     .index("by_status", ["status"]),
+
+  // What the production AI asked people for: a review of what it posted
+  // (request_review) or an answer (ask_user). The story's thread shows each as
+  // a card with the cut and images in it; the decision bar acts on the open one.
+  requests: defineTable({
+    storyId: v.id("stories"),
+    stage: stage,
+    turnId: v.id("turns"),
+    kind: v.union(v.literal("review"), v.literal("question")),
+    message: v.string(),
+    // What to look at: cuts and images posted for this round.
+    versionIds: v.array(v.id("versions")),
+    imageIds: v.array(v.id("images")),
+    status: v.union(
+      v.literal("open"),
+      v.literal("approved"),
+      v.literal("changes"), // "Not good": sent back with notes
+      v.literal("answered"),
+      v.literal("superseded"), // a newer request, or the story moved on
+    ),
+    at: v.number(),
+    decidedBy: v.optional(v.id("users")),
+    decidedAt: v.optional(v.number()),
+  }).index("by_story", ["storyId", "at"]),
 
   // A review comment, image comment or note change not yet sent to the
   // production AI.

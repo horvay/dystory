@@ -4,6 +4,7 @@ import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } fr
 import type { Doc, Id } from "./_generated/dataModel";
 import { FEEDBACK_QUIET_MS } from "../shared/director";
 import { stageInfo } from "../shared/stages";
+import { closeRequests } from "./requests";
 import { queueTurn } from "./turns";
 
 type Kind = Doc<"feedback">["kind"];
@@ -55,7 +56,7 @@ function describeDrawing(drawing: Doc<"comments">["drawing"]) {
 }
 
 /** The feedback as the production AI reads it. */
-async function describe(ctx: QueryCtx, rows: Doc<"feedback">[]) {
+export async function describe(ctx: QueryCtx, rows: Doc<"feedback">[]) {
   const name = async (id: Id<"users">) => (await ctx.db.get(id))?.name ?? "Someone";
   const lines: string[] = [];
   for (const f of rows) {
@@ -92,26 +93,50 @@ async function describe(ctx: QueryCtx, rows: Doc<"feedback">[]) {
   return lines;
 }
 
-/** Sends the collected feedback to the production AI if it's due (or now, with `force`). */
-async function flushStory(ctx: MutationCtx, storyId: Id<"stories">, force?: boolean) {
+/** Marks the story's unsent feedback sent and returns it as the production AI reads it. */
+export async function takePending(ctx: MutationCtx, storyId: Id<"stories">) {
+  const rows = await ctx.db
+    .query("feedback")
+    .withIndex("by_story_sent", (q) => q.eq("storyId", storyId).eq("sentAt", undefined))
+    .collect();
+  await ctx.db.patch(storyId, { feedbackDueAt: undefined });
+  const lines = await describe(ctx, rows);
+  const now = Date.now();
+  for (const f of rows) await ctx.db.patch(f._id, { sentAt: now });
+  return lines;
+}
+
+/**
+ * Sends the collected feedback to the production AI if it's due (or now, with
+ * `force`). `sentBack`: someone pressed "Not good" and said why.
+ */
+async function flushStory(
+  ctx: MutationCtx,
+  storyId: Id<"stories">,
+  force?: boolean,
+  sentBack?: { userId: Id<"users">; text: string; anchored: boolean },
+) {
     const story = await ctx.db.get(storyId);
-    if (!story?.feedbackDueAt) return;
-    if (!force && story.feedbackDueAt > Date.now()) return; // a newer comment pushed it back
-    const rows = await ctx.db
-      .query("feedback")
-      .withIndex("by_story_sent", (q) => q.eq("storyId", storyId).eq("sentAt", undefined))
-      .collect();
-    await ctx.db.patch(storyId, { feedbackDueAt: undefined });
-    if (!rows.length) return;
-    const lines = await describe(ctx, rows);
-    const now = Date.now();
-    for (const f of rows) await ctx.db.patch(f._id, { sentAt: now });
-    if (!lines.length) return;
+    if (!story) return;
+    if (!sentBack) {
+      if (!story.feedbackDueAt) return;
+      if (!force && story.feedbackDueAt > Date.now()) return; // a newer comment pushed it back
+    }
+    const lines = await takePending(ctx, storyId);
+    if (!lines.length && !sentBack) return;
     const n = lines.length;
+    const label = stageInfo(story.stage).label;
+    const who = sentBack && ((await ctx.db.get(sentBack.userId))?.name ?? "Someone");
+    const lead = sentBack
+      ? `${who} looked at ${label} and says it's not good yet.${sentBack.text && !sentBack.anchored ? ` In their words: ${sentBack.text}` : ""}${n ? "\n\nTheir notes:" : ""}`
+      : `New review feedback on "${story.title}" (stage: ${label}):`;
     await queueTurn(ctx, storyId, {
       kind: "feedback",
-      display: `${n} piece${n === 1 ? "" : "s"} of review feedback`,
-      prompt: `New review feedback on "${story.title}" (stage: ${stageInfo(story.stage).label}):
+      display: sentBack
+        ? `Not good${sentBack.text ? `: ${sentBack.text}` : ""}`
+        : `${n} piece${n === 1 ? "" : "s"} of review feedback`,
+      requestedBy: sentBack?.userId,
+      prompt: `${lead}
 
 ${lines.join("\n")}
 
@@ -122,6 +147,73 @@ Work through every item. Fix what's asked and post a new cut (or new images) tha
 export const flush = internalMutation({
   args: { storyId: v.id("stories"), force: v.optional(v.boolean()) },
   handler: (ctx, { storyId, force }) => flushStory(ctx, storyId, force),
+});
+
+/**
+ * "Not good": the open review goes back to the director now, with why, any
+ * notes still waiting, and a note on each image or cut moment it points at.
+ */
+export const sendBack = mutation({
+  args: {
+    storyId: v.id("stories"),
+    userId: v.id("users"),
+    text: v.string(),
+    imageIds: v.optional(v.array(v.id("images"))),
+    cut: v.optional(v.object({ versionId: v.id("versions"), time: v.number() })),
+  },
+  handler: async (ctx, { storyId, userId, text, imageIds, cut }) => {
+    const body = text.trim().slice(0, 5000);
+    const anchored = !!imageIds?.length || !!cut;
+    if (!body && !anchored) throw new Error("Say what's wrong");
+    await addAnchoredNotes(ctx, userId, body || "Not good", imageIds, cut);
+    await closeRequests(ctx, storyId, "changes", userId, "review");
+    await flushStory(ctx, storyId, true, { userId, text: body, anchored });
+  },
+});
+
+/** A note on images or a moment of a cut, made from the thread; it goes to the director with the next batch. */
+export async function addAnchoredNotes(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  body: string,
+  imageIds?: Id<"images">[],
+  cut?: { versionId: Id<"versions">; time: number },
+) {
+  for (const imageId of imageIds ?? []) {
+    const image = await ctx.db.get(imageId);
+    if (!image) continue;
+    const id = await ctx.db.insert("imageComments", { imageId, authorId: userId, body });
+    await recordFeedback(ctx, image.videoId, "imageComment", id, userId);
+  }
+  if (cut) {
+    const version = await ctx.db.get(cut.versionId);
+    if (version) {
+      const id = await ctx.db.insert("comments", {
+        videoId: version.videoId,
+        versionId: version._id,
+        authorId: userId,
+        body,
+        time: Math.max(0, cut.time),
+        resolved: false,
+      });
+      await recordFeedback(ctx, version.videoId, "comment", id, userId);
+    }
+  }
+}
+
+/** A note typed in the thread with images or a cut moment attached. */
+export const addNote = mutation({
+  args: {
+    userId: v.id("users"),
+    text: v.string(),
+    imageIds: v.optional(v.array(v.id("images"))),
+    cut: v.optional(v.object({ versionId: v.id("versions"), time: v.number() })),
+  },
+  handler: async (ctx, { userId, text, imageIds, cut }) => {
+    const body = text.trim().slice(0, 5000);
+    if (!body) throw new Error("Empty note");
+    await addAnchoredNotes(ctx, userId, body, imageIds, cut);
+  },
 });
 
 /** "Send now": skip the quiet period. */

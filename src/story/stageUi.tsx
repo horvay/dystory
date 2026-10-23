@@ -6,7 +6,7 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { Modal } from "../components/Modal";
 import { cn } from "../lib/hooks";
 import { useMe } from "../lib/identity";
-import { nextStage, stageInfo, type StageId, type StageState } from "../../shared/stages";
+import { nextStage, stageIndex, stageInfo, type StageId, type StageState } from "../../shared/stages";
 
 export type Story = Doc<"stories">;
 
@@ -96,9 +96,12 @@ export function NewStoryDialog({ onClose, docId, title: initial }: { onClose: ()
 export function StageMoveDialog({
   story,
   to,
+  pending = 0,
   onClose,
 }: {
   story: Story;
+  /** Notes not yet sent to the director; they go with an approval. */
+  pending?: number;
   /** Missing: approve and go to the next stage. */
   to?: StageId;
   onClose: () => void;
@@ -118,7 +121,9 @@ export function StageMoveDialog({
       : `Approve ${current.label}?`
     : to === "script"
       ? "Back to the script?"
-      : `Move to ${target!.label}?`;
+      : stageIndex(to!) < stageIndex(story.stage)
+        ? `Redo from ${target!.label}?`
+        : `Skip ahead to ${target!.label}?`;
   const body = !back
     ? story.stage === "script"
       ? "The director starts on casting: it reads the script and picks or designs a voice for every character. You'll review auditions before any line is voiced."
@@ -127,7 +132,9 @@ export function StageMoveDialog({
         : `The director moves on to ${stageInfo(nextStage(story.stage)).label}.`
     : to === "script"
       ? "Production stops: the director's queued work and background jobs are cancelled. Put the script back into production when it's ready."
-      : "The director is told to redo the work from that stage on, and says what has to change before starting.";
+      : stageIndex(to!) < stageIndex(story.stage)
+        ? `The director redoes ${target!.label} and then every stage after it, up to ${current.label}. The work so far stays in the thread.`
+        : `The director skips ahead to ${target!.label}.`;
 
   return (
     <Modal onClose={onClose} className="max-w-md">
@@ -147,6 +154,12 @@ export function StageMoveDialog({
       >
         <h2 className="font-semibold">{title}</h2>
         <p className="mt-1 mb-3 text-sm text-muted">{body}</p>
+        {!back && pending > 0 && story.stage !== "script" && (
+          <p className="mb-3 rounded-xl bg-accent/8 px-3 py-2 text-sm text-ink-2">
+            {pending === 1 ? "1 note hasn't" : `${pending} notes haven't`} gone to the director yet. They go with the
+            approval, as small fixes to make along the way.
+          </p>
+        )}
         {to !== "script" && (
           <textarea
             value={note}
@@ -161,7 +174,7 @@ export function StageMoveDialog({
             Cancel
           </button>
           <button disabled={busy} className="h-9 rounded-xl bg-ink px-4 text-sm font-medium text-bg disabled:opacity-50">
-            {!back ? (story.stage === "script" ? "Start production" : "Approve") : "Move"}
+            {!back ? (story.stage === "script" ? "Start production" : "Approve") : to === "script" || stageIndex(to!) < stageIndex(story.stage) ? "Redo from here" : "Skip ahead"}
           </button>
         </div>
       </form>

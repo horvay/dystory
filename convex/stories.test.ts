@@ -321,3 +321,120 @@ describe("restarts", () => {
     expect(s.statusLine).toContain("Restarts kept cutting");
   });
 });
+
+describe("the thread and its requests", () => {
+  const file = { fileId: "f", fileName: "cut.mp4", size: 1, duration: 60, width: 1920, height: 1080, fps: 24 };
+  const img = (n: number) => ({ file: `${n}.png`, thumb: `${n}.png`, fileName: `${n}.png`, size: 1, width: 1280, height: 720 });
+
+  /** Production started; the director posts two stills and asks for review. */
+  async function withStills() {
+    const ctx = await setup();
+    const { t, userId, storyId, claimNext, finish } = ctx;
+    await t.mutation(api.stories.approve, { storyId, userId });
+    const job = await claimNext();
+    const a = await t.mutation(api.director.addImage, { turnId: job.turnId, caption: "Shot 1", ...img(1) });
+    const b = await t.mutation(api.director.addImage, { turnId: job.turnId, caption: "Shot 2", ...img(2) });
+    await t.mutation(api.director.requestReview, { turnId: job.turnId, message: "Pick a still" });
+    await finish(job.turnId);
+    return { ...ctx, images: [a, b], turnId: job.turnId };
+  }
+
+  test("a review request shows what was posted since the last one", async () => {
+    const { t, storyId, images, turnId, story, claimNext, finish } = await withStills();
+    const thread = (await t.query(api.requests.thread, { storyId }))!;
+    expect(thread.requests).toHaveLength(1);
+    const [r] = thread.requests;
+    expect(r!.status).toBe("open");
+    expect(r!.imageIds).toEqual(images);
+    expect(thread.images.every((i) => i.turnId === turnId)).toBe(true);
+    expect((await story()).openRequest?.kind).toBe("review");
+
+    // The next round only shows the new cut, and replaces the first.
+    await t.mutation(api.feedback.sendNow, { storyId });
+    await t.mutation(api.turns.send, { storyId, userId: (await story()).createdBy, text: "Make it darker" });
+    const job = await claimNext();
+    await t.mutation(api.director.addVersion, { turnId: job.turnId, summary: "Darker", ...file });
+    await t.mutation(api.director.requestReview, { turnId: job.turnId, message: "Darker now" });
+    await finish(job.turnId);
+    const after = (await t.query(api.requests.thread, { storyId }))!;
+    expect(after.requests.map((x) => x.status)).toEqual(["superseded", "open"]);
+    expect(after.requests[1]!.imageIds).toEqual([]);
+    expect(after.requests[1]!.versionIds).toHaveLength(1);
+  });
+
+  test("approving closes the request and takes waiting notes along as small fixes", async () => {
+    const { t, userId, storyId, images, story } = await withStills();
+    await t.mutation(api.feedback.addNote, { userId, text: "Shot 2 is a bit dark", imageIds: [images[1]!] });
+    expect((await t.query(api.feedback.pending, { storyId })).count).toBe(1);
+    await t.mutation(api.stories.approve, { storyId, userId });
+    expect((await t.query(api.feedback.pending, { storyId })).count).toBe(0);
+    const thread = (await t.query(api.requests.thread, { storyId }))!;
+    expect(thread.requests[0]!.status).toBe("approved");
+    expect(thread.requests[0]!.decidedBy).toBe(userId);
+    const kickoff = thread.turns.at(-1)!;
+    expect(kickoff.display).toBe("Casting approved");
+    expect(kickoff.prompt).toContain("small fixes");
+    expect(kickoff.prompt).toContain("Shot 2 is a bit dark");
+    expect((await story()).stage).toBe("voiceover");
+    expect((await t.query(api.requests.approvals, { storyId })).casting?.by).toBe(userId);
+  });
+
+  test("not good sends it back right away, with notes on what was pointed at", async () => {
+    const { t, userId, storyId, images, story } = await withStills();
+    await t.mutation(api.feedback.sendBack, {
+      storyId,
+      userId,
+      text: "Gary looks twelve",
+      imageIds: [images[0]!],
+    });
+    const thread = (await t.query(api.requests.thread, { storyId }))!;
+    expect(thread.requests[0]!.status).toBe("changes");
+    const turn = thread.turns.at(-1)!;
+    expect(turn.kind).toBe("feedback");
+    expect(turn.status).toBe("queued");
+    expect(turn.display).toBe("Not good: Gary looks twelve");
+    expect(turn.prompt).toContain("says it's not good yet");
+    expect(turn.prompt).toContain("Shot 1");
+    expect(turn.prompt).toContain("Gary looks twelve");
+    expect((await t.query(api.images.comments, { imageId: images[0]! }))[0]!.body).toBe("Gary looks twelve");
+    expect((await story()).stage).toBe("casting");
+  });
+
+  test("a question is answered by the next message", async () => {
+    const { t, userId, storyId, claimNext, finish, story } = await setup();
+    await t.mutation(api.stories.approve, { storyId, userId });
+    const job = await claimNext();
+    await t.mutation(api.director.askUser, { turnId: job.turnId, question: "Which channel?" });
+    await finish(job.turnId);
+    expect((await story()).openRequest?.kind).toBe("question");
+    await t.mutation(api.turns.send, { storyId, userId, text: "The main one" });
+    const thread = (await t.query(api.requests.thread, { storyId }))!;
+    expect(thread.requests[0]!.status).toBe("answered");
+    expect(thread.turns.every((x) => x.stage === "casting")).toBe(true);
+  });
+});
+
+describe("messages and waiting notes", () => {
+  test("a message takes the notes still waiting along with it", async () => {
+    const { t, userId, storyId, claimNext, finish } = await setup();
+    await t.mutation(api.stories.approve, { storyId, userId });
+    const job = await claimNext();
+    const file = { fileId: "f", fileName: "vo.mp4", size: 1, duration: 60, width: 1920, height: 1080, fps: 24 };
+    await t.mutation(api.director.addVersion, { turnId: job.turnId, summary: "Auditions", ...file });
+    await t.mutation(api.director.requestReview, { turnId: job.turnId, message: "Ready" });
+    await finish(job.turnId);
+    const s = (await t.query(api.stories.get, { storyId }))!;
+    const versionId = (await t.query(api.videos.get, { videoId: s.videoId }))!.versions[0]!._id;
+    await t.mutation(api.comments.add, { versionId, authorId: userId, body: "Toaster too squeaky", time: 3.5 });
+    await t.mutation(api.turns.send, { storyId, userId, text: "Also make Gary older" });
+    expect((await t.query(api.feedback.pending, { storyId })).count).toBe(0);
+    const turn = (await t.query(api.turns.list, { storyId })).at(-1)!;
+    expect(turn.kind).toBe("message");
+    expect(turn.display).toBe("Also make Gary older");
+    expect(turn.prompt).toContain("Also make Gary older");
+    expect(turn.prompt).toContain("Toaster too squeaky");
+    // The timer finds nothing left to send.
+    await t.mutation(api.feedback.sendNow, { storyId });
+    expect((await t.query(api.turns.list, { storyId })).at(-1)!._id).toBe(turn._id);
+  });
+});

@@ -14,11 +14,16 @@ A story moves through stages:
 - **Start production**: the story's **director** takes over. It's one Claude Opus session (medium effort) that keeps
   its context for the whole story. It works in `~/ai/clips/short-stories/<slug>/` with the clips tools and GPUs, and
   posts every cut, still and note to the story's page.
-- **Review**: comment on a cut at a moment (with drawings), pin comments on images, edit notes. A few minutes after
-  the last comment, the batch goes to the director, which fixes everything, resolves what it fixed, replies where it
-  needs to, and posts the next cut. "Send now" skips the wait.
-- **Approve** the stage when it's right; the director starts the next one. Any stage can be revisited from the stage
-  row at the top.
+- **The story page** is a thread: the stages down the left, the director's messages in the middle, and whenever it
+  asks for review, a card with the cut and images it wants looked at, right there. Under the thread, a glowing
+  decision bar: **Approve** (the director starts the next stage) or **Not good…** (say why, by typing or dictating,
+  pointing at images or a moment of the cut; it goes back to the director at once). The box under it writes to the
+  director. Nobody has to open Cuts, Images or Notes (links under the stages) to finish a stage.
+- **Notes along the way**: click an image's corner or "Note at 0:12" on a cut, then write the note. Notes (and
+  comments made in Cuts, Images and Notes) go to the director together three quiet minutes after the last one; "Send
+  now" skips the wait, and an approval takes waiting notes along as small fixes.
+- **Redo or skip**: a stage's `⋯` menu in the left rail ("Redo from here…", "Skip ahead to here…"), confirmed first.
+  Clicking a stage only scrolls the thread to it.
 - Voices approved at casting go into the **voice catalog** (Voices in the sidebar), which later stories cast from.
 
 Plain reviews (news segments, long-video clips) still work as they did on Video Review: Reviews in the sidebar, or
@@ -71,7 +76,7 @@ tailscale funnel --https=10000 off                          # stop public access
 ## How the director works
 
 - **Turns.** Everything that needs the director becomes a turn in Convex (`turns`): a stage starting, a batch of
-  review feedback, a message in the Director panel, a background job finishing. The worker runs them one at a time
+  review feedback, a message in the thread, a background job finishing. The worker runs them one at a time
   per story (up to four stories at once), resuming the story's Agent SDK session each time.
 - **Its tools.** Every Claude Code tool, with permissions bypassed (nobody is at a terminal), plus the app tools in
   `worker/studio-tools.ts`: `post_cut`, `post_image`, `write_note`, `reply_to_comment`, `resolve_comment`,
@@ -84,16 +89,21 @@ tailscale funnel --https=10000 off                          # stop public access
   `dystory-<slug>-<kind>`; the daemon runs it in `b70q-<id>.service` when its turn comes. Other jobs run as transient
   systemd user units (`dystory-<slug>-…`). Restarting Dystory kills neither. The director checks every 15 s, shows a
   waiting B70 job's place in line, and wakes the AI with the job's exit code and log tail. Logs are in
-  `<story folder>/.director/jobs/`. Stop buttons in the Director panel stop the unit or kill the ticket.
+  `<story folder>/.director/jobs/`. Stop buttons in the decision bar stop the unit or kill the ticket.
 - **Restarts.** A restart kills whatever turn is running (and its foreground commands). At startup the worker marks
   those turns cut off and queues a turn in the same session telling the director to check what was half-done and
   carry on (`resetStale` in `convex/director.ts`). The session ID is saved as soon as a turn starts, so this works for
   a story's first turn too. After three cut-offs in a row it stops and asks instead. Background jobs aren't affected.
+- **Requests** (`requests`, `convex/requests.ts`): each `request_review` or `ask_user` call is a card in the thread.
+  It shows the cuts and images the director posted since its last request (or the ones it names), and is `open`
+  until someone approves, says "Not good" (`changes`), answers, or a newer request replaces it. Every cut and image
+  the director posts records its turn, so the thread shows it there too. `stories.get` returns the open one for the
+  decision bar.
 - **Where the story stands** (`stories.state`): `writing` (script stage), `working` (the director is on it),
   `review` (it asked for review), `waiting` (it asked a question, failed, or stopped), `done`. The status bar shows it,
   with the matching action.
 - **Context.** After each turn the director records the session's context size. Past 300k tokens it queues a
-  `/compact` turn. "New session" in the Director panel starts over; the director then catches up from the story's
+  `/compact` turn. "New director session…" in the story's `⋯` menu starts over; the director then catches up from the story's
   README and folder.
 - **Feedback batching.** Comments, replies, image comments and note edits on a story are recorded in `feedback`.
   Three quiet minutes after the newest one (`FEEDBACK_QUIET_MS` in `shared/director.ts`) they go to the director as
@@ -117,8 +127,8 @@ Settings (`.env.local` or the environment): `DIRECTOR_MODEL` (default `claude-op
 convex/        backend: documents and their history, the script assistant's queue, stories, turns,
                feedback, wakeups, voices, videos/versions/comments/notes/images (review)
 shared/        editor schema + Markdown, stages, director settings
-src/           React app: components/ (shell, sidebar, home, documents, reviews), story/ (story page,
-               Director panel), voices/, player/, notes/, images/, panels/ (script assistant, chat, history)
+src/           React app: components/ (shell, sidebar, home, documents, reviews), story/ (story page: stage
+               rail, thread, decision bar), voices/, player/, notes/, images/, panels/ (script assistant, chat, history)
 worker/        script-assistant.ts, director.ts, studio-tools.ts, jobs.ts, media.ts, prompts
 media/         media server
 gate/          password gate

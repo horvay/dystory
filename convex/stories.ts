@@ -4,6 +4,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { slugify } from "../shared/director";
 import { nextStage, stageIndex, stageInfo, type StageId } from "../shared/stages";
 import { insertDoc } from "./docs";
+import { takePending } from "./feedback";
+import { closeRequests } from "./requests";
 import { stage as stageValidator } from "./schema";
 import { queueTurn } from "./turns";
 
@@ -84,8 +86,16 @@ export const get = query({
       .withIndex("by_story", (q) => q.eq("storyId", story._id))
       .filter((q) => q.eq(q.field("status"), "waiting"))
       .collect();
+    const open = (
+      await ctx.db
+        .query("requests")
+        .withIndex("by_story", (q) => q.eq("storyId", story._id))
+        .order("desc")
+        .take(5)
+    ).find((r) => r.status === "open");
     return {
       ...(await summary(ctx, story)),
+      openRequest: open ? { _id: open._id, kind: open.kind } : null,
       busy: running.some((t) => t.status === "running"),
       queued: running.filter((t) => t.status === "queued").length,
       jobs: waiting.map((w) => ({ _id: w._id, note: w.note, at: w.at, unit: w.unit, queue: w.queue })),
@@ -230,6 +240,8 @@ async function moveTo(
   userId: Id<"users">,
   to: StageId,
   note?: string,
+  /** More for the AI only (notes that came with an approval). */
+  extra?: string,
 ) {
   const who = (await ctx.db.get(userId))?.name ?? "Someone";
   const back = stageIndex(to) < stageIndex(story.stage);
@@ -250,7 +262,7 @@ async function moveTo(
   });
   await queueTurn(ctx, story._id, {
     kind: "stage",
-    prompt: stageKickoff(to, story.stage, who, note?.trim() || undefined, back),
+    prompt: stageKickoff(to, story.stage, who, note?.trim() || undefined, back) + (extra ? `\n\n${extra}` : ""),
     display: back
       ? `Moved back to ${stageInfo(to).label}${note?.trim() ? `: ${note.trim()}` : ""}`
       : story.stage === "script"
@@ -267,7 +279,13 @@ export const approve = mutation({
     const story = await ctx.db.get(storyId);
     if (!story) throw new Error("Story not found");
     if (story.stage === "done") return;
-    await moveTo(ctx, story, userId, nextStage(story.stage), note);
+    await closeRequests(ctx, storyId, "approved", userId);
+    // Notes still waiting to go out ride along with the approval.
+    const pending = await takePending(ctx, storyId);
+    const extra = pending.length
+      ? `Notes that came in with the approval (small fixes, not blockers; do them as part of the next stage):\n${pending.join("\n")}`
+      : "";
+    await moveTo(ctx, story, userId, nextStage(story.stage), note, extra);
   },
 });
 
@@ -283,6 +301,7 @@ export const setStage = mutation({
     const story = await ctx.db.get(storyId);
     if (!story) throw new Error("Story not found");
     if (stage === story.stage) return;
+    await closeRequests(ctx, storyId, "superseded", userId);
     await moveTo(ctx, story, userId, stage, note);
   },
 });
