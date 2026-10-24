@@ -14,7 +14,6 @@ import { useMe } from "../lib/identity";
 import { relativeTime, timecode } from "../lib/time";
 import { useDictation } from "../lib/useDictation";
 import { stageInfo, type StageId } from "../../shared/stages";
-import { useAnchors, type Anchor } from "./anchors";
 import { StageMoveDialog } from "./stageUi";
 import { scrollToOpenRequest } from "./Thread";
 import type { StoryData } from "./StoryPage";
@@ -212,7 +211,7 @@ function Working({ story }: { story: StoryData }) {
       </div>
       {!online && (
         <p className="mt-1 text-xs text-danger">
-          The director isn't running. Start Dystory with `bun run start` (or its systemd service).
+          The director isn't running. Start Dynastory with `bun run start` (or its systemd service).
         </p>
       )}
       {story.jobs.length > 0 && (
@@ -270,8 +269,8 @@ function PendingNotes({
 }
 
 // ---------------------------------------------------------------------------
-// The one box: a message to the director, a note on what's pointed at, or why
-// it's not good
+// The box for writing to the director, or for why it's not good. Notes on a
+// cut moment or images are written where they're clicked (NoteBox), not here.
 // ---------------------------------------------------------------------------
 
 function Composer({
@@ -285,9 +284,7 @@ function Composer({
 }) {
   const me = useMe();
   const toast = useToast();
-  const { anchors, remove, clear, focusSignal } = useAnchors();
   const send = useMutation(api.turns.send);
-  const addNote = useMutation(api.feedback.addNote);
   const sendBack = useMutation(api.feedback.sendBack);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -300,8 +297,8 @@ function Composer({
   });
 
   useEffect(() => {
-    if (focusSignal || notGood) input.current?.focus();
-  }, [focusSignal, notGood]);
+    if (notGood) input.current?.focus();
+  }, [notGood]);
 
   useEffect(() => {
     const el = input.current;
@@ -311,10 +308,7 @@ function Composer({
     el.style.overflowY = el.scrollHeight > 200 ? "auto" : "hidden";
   }, [text]);
 
-  const imageIds = anchors.flatMap((a) => (a.kind === "image" ? [a.id] : []));
-  const cutAnchor = anchors.find((a): a is Extract<Anchor, { kind: "cut" }> => a.kind === "cut");
-  const cut = cutAnchor && { versionId: cutAnchor.versionId, time: cutAnchor.time };
-  const canSend = !!text.trim() || (notGood && anchors.length > 0);
+  const canSend = !!text.trim();
 
   const submit = async () => {
     if (!canSend || busy) return;
@@ -322,16 +316,13 @@ function Composer({
     setBusy(true);
     try {
       if (notGood) {
-        await sendBack({ storyId: story._id, userId: me._id, text: body, imageIds, cut });
+        await sendBack({ storyId: story._id, userId: me._id, text: body });
         onNotGoodDone();
         toast({ message: "Sent back to the director with your notes." });
-      } else if (anchors.length) {
-        await addNote({ userId: me._id, text: body, imageIds, cut });
       } else {
         await send({ storyId: story._id, userId: me._id, text: body });
       }
       setText("");
-      clear();
     } catch (err) {
       toast({ message: err instanceof Error ? err.message : "Couldn't send that." });
     } finally {
@@ -341,9 +332,7 @@ function Composer({
 
   const placeholder = notGood
     ? `What's wrong with the ${stageInfo(story.stage).label.toLowerCase()}?`
-    : anchors.length
-      ? "Write a note about what you picked…"
-      : story.state === "waiting"
+    : story.state === "waiting"
         ? "Answer the director…"
         : "Write to the director…";
 
@@ -357,30 +346,10 @@ function Composer({
       {notGood && (
         <div className="flex items-center gap-2 border-b border-line px-3.5 py-2 text-sm font-semibold text-danger">
           <ThumbsDown size={15} /> Not good: tell the director what to change
-          <span className="hidden font-normal text-muted sm:inline">· click images or "Note at" on the cut to point at things</span>
+          <span className="hidden font-normal text-muted sm:inline">· notes you left on the cut or images go with it</span>
           <button onClick={onNotGoodDone} className="ml-auto grid size-7 place-items-center rounded-lg text-muted hover:bg-surface-2" aria-label="Cancel">
             <X size={16} />
           </button>
-        </div>
-      )}
-      {anchors.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-2.5 pt-2.5">
-          {anchors.map((a) => (
-            <span
-              key={a.kind === "image" ? a.id : "cut"}
-              className="flex h-7 items-center gap-1.5 rounded-lg bg-surface-2 pr-1 pl-1 text-xs font-medium"
-            >
-              {a.kind === "image" ? (
-                <img src={`/media/images/${a.thumb}`} alt="" className="h-5 w-8 rounded object-cover" />
-              ) : (
-                <Play size={12} className="ml-1 text-accent" />
-              )}
-              <span className="max-w-40 truncate">{a.kind === "image" ? a.label : `Cut v${a.number} at ${timecode(a.time)}`}</span>
-              <button onClick={() => remove(a)} className="grid size-5 place-items-center rounded text-muted hover:text-ink" aria-label="Remove">
-                <X size={12} />
-              </button>
-            </span>
-          ))}
         </div>
       )}
       <DictationStatus dictation={dictation} />
@@ -425,12 +394,7 @@ function Composer({
           </button>
         )}
       </div>
-      {!notGood && anchors.length > 0 && (
-        <p className="px-3.5 pb-2 text-[11px] text-muted">
-          Notes on images or a cut moment go to the director together, a few minutes after the last one.
-        </p>
-      )}
-      {!notGood && !anchors.length && story.busy && (
+      {!notGood && story.busy && (
         <p className="px-3.5 pb-2 text-[11px] text-muted">The director reads your message when it finishes what it's doing.</p>
       )}
     </div>

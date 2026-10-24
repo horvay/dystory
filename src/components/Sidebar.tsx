@@ -110,7 +110,7 @@ export function Sidebar({ onSwitchUser }: { onSwitchUser: () => void }) {
       <div className="flex h-14 items-center gap-2 px-4">
         <Link href="/" className="flex items-center gap-2">
           <img src="/icon.svg" alt="" className="size-7 rounded-lg" />
-          <span className="font-semibold tracking-tight">Dystory</span>
+          <span className="font-semibold tracking-tight">Dynastory</span>
         </Link>
         <button
           onClick={toggleSidebar}

@@ -28,7 +28,7 @@ import { renderChatMarkdown } from "../lib/chatMarkdown";
 import { cn } from "../lib/hooks";
 import { clockTime, dayLabel, timecode } from "../lib/time";
 import { stageInfo, type StageId } from "../../shared/stages";
-import { useAnchors } from "./anchors";
+import { NoteBox } from "./NoteBox";
 import type { StoryData } from "./StoryPage";
 
 type ThreadData = NonNullable<ReturnType<typeof useQuery<typeof api.requests.thread>>>;
@@ -486,9 +486,10 @@ function RequestCard({
 // ---------------------------------------------------------------------------
 
 function InlineCut({ version, storyId, compact }: { version: Version; storyId: Id<"stories">; compact?: boolean }) {
-  const { setCut } = useAnchors();
   const video = useRef<HTMLVideoElement>(null);
   const [time, setTime] = useState(0);
+  // The moment a note is being written about, while its box is open.
+  const [noteAt, setNoteAt] = useState<number | null>(null);
   // Paused partway: the moment to write a note, so the button lights up.
   const [paused, setPaused] = useState(true);
   const [more, setMore] = useState(false);
@@ -536,21 +537,29 @@ function InlineCut({ version, storyId, compact }: { version: Version; storyId: I
         />
       </div>
       <div className="p-2.5">
-        <button
-          onClick={() => {
-            video.current?.pause();
-            setCut({ kind: "cut", versionId: version._id, number: version.number, time });
-          }}
-          className={cn(
-            "flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[15px] font-semibold transition active:scale-[0.99]",
-            paused && time > 0
-              ? "note-ready bg-accent text-white"
-              : "border-2 border-accent/50 bg-accent/10 text-accent hover:bg-accent/15",
-          )}
-          title="Pause and write a note about this moment"
-        >
-          <MessageSquarePlus size={19} /> Add a note at {timecode(time)}
-        </button>
+        {noteAt !== null ? (
+          <NoteBox
+            title={`Note at ${timecode(noteAt)} · cut v${version.number}`}
+            cut={{ versionId: version._id, time: noteAt }}
+            onDone={() => setNoteAt(null)}
+          />
+        ) : (
+          <button
+            onClick={() => {
+              video.current?.pause();
+              setNoteAt(time);
+            }}
+            className={cn(
+              "flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[15px] font-semibold transition active:scale-[0.99]",
+              paused && time > 0
+                ? "note-ready bg-accent text-white"
+                : "border-2 border-accent/50 bg-accent/10 text-accent hover:bg-accent/15",
+            )}
+            title="Pause and write a note about this moment"
+          >
+            <MessageSquarePlus size={19} /> Add a note at {timecode(time)}
+          </button>
+        )}
         <div className="mt-2 flex items-center gap-3 px-1">
           <span className="text-sm font-medium">
             Cut v{version.number}
@@ -582,16 +591,13 @@ function InlineCut({ version, storyId, compact }: { version: Version; storyId: I
 const IMAGES_SHOWN = 24;
 
 function ImageGrid({ images, storyId, small }: { images: Image[]; storyId: Id<"stories">; small?: boolean }) {
-  const { toggleImage, has } = useAnchors();
+  // Images picked for one note about all of them.
+  const [picked, setPicked] = useState<Id<"images">[]>([]);
+  const toggle = (id: Id<"images">) =>
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const [all, setAll] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
   const shown = all ? images : images.slice(0, small ? 12 : IMAGES_SHOWN);
-  const anchor = (img: Image) => ({
-    kind: "image" as const,
-    id: img._id,
-    label: img.caption?.split(/[.,;:(]/)[0]?.trim().slice(0, 40) || "Image",
-    thumb: img.thumb,
-  });
   return (
     <div>
       <div
@@ -601,7 +607,7 @@ function ImageGrid({ images, storyId, small }: { images: Image[]; storyId: Id<"s
         )}
       >
         {shown.map((img, i) => {
-          const picked = has(img._id);
+          const on = picked.includes(img._id);
           return (
             <div key={img._id} className="group relative">
               <button
@@ -609,7 +615,7 @@ function ImageGrid({ images, storyId, small }: { images: Image[]; storyId: Id<"s
                 title={img.caption}
                 className={cn(
                   "block w-full overflow-hidden rounded-lg bg-surface-2 ring-offset-2 ring-offset-surface transition",
-                  picked ? "ring-2 ring-accent" : "hover:opacity-90",
+                  on ? "ring-2 ring-amber-500" : "hover:opacity-90",
                 )}
               >
                 <img
@@ -620,17 +626,17 @@ function ImageGrid({ images, storyId, small }: { images: Image[]; storyId: Id<"s
                 />
               </button>
               <button
-                onClick={() => toggleImage(anchor(img))}
+                onClick={() => toggle(img._id)}
                 className={cn(
                   "absolute top-1.5 left-1.5 grid size-6 place-items-center rounded-full border text-white shadow transition",
-                  picked
-                    ? "border-accent bg-accent"
+                  on
+                    ? "border-amber-500 bg-amber-500"
                     : "border-white/80 bg-black/30 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                 )}
-                title={picked ? "Don't point at this" : "Point at this in a note"}
-                aria-pressed={picked}
+                title={on ? "Leave this out of the note" : "Pick for a note about several images"}
+                aria-pressed={on}
               >
-                {picked && <Check size={13} />}
+                {on && <Check size={13} />}
               </button>
               {img.comments > 0 && (
                 <span className="absolute right-1.5 bottom-1.5 rounded-full bg-black/60 px-1.5 text-[10px] font-medium text-white">
@@ -647,6 +653,15 @@ function ImageGrid({ images, storyId, small }: { images: Image[]; storyId: Id<"s
           Show all {images.length} images
         </button>
       )}
+      {picked.length > 0 && (
+        <div className="mt-2.5">
+          <NoteBox
+            title={`Note about ${picked.length === 1 ? "this image" : `these ${picked.length} images`}`}
+            imageIds={picked}
+            onDone={() => setPicked([])}
+          />
+        </div>
+      )}
       {viewing !== null && (
         <Lightbox
           images={images}
@@ -654,8 +669,6 @@ function ImageGrid({ images, storyId, small }: { images: Image[]; storyId: Id<"s
           storyId={storyId}
           onIndex={setViewing}
           onClose={() => setViewing(null)}
-          onPoint={(img) => toggleImage(anchor(img))}
-          isPicked={has}
         />
       )}
     </div>
@@ -668,21 +681,19 @@ function Lightbox({
   storyId,
   onIndex,
   onClose,
-  onPoint,
-  isPicked,
 }: {
   images: Image[];
   index: number;
   storyId: Id<"stories">;
   onIndex: (i: number) => void;
   onClose: () => void;
-  onPoint: (img: Image) => void;
-  isPicked: (id: Id<"images">) => boolean;
 }) {
   const img = images[index]!;
+  const [noting, setNoting] = useState<Id<"images"> | null>(null);
   const go = (d: number) => onIndex((index + d + images.length) % images.length);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (noting) return; // the note box has the keys
       if (e.key === "Escape") onClose();
       else if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
@@ -690,7 +701,6 @@ function Lightbox({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  const picked = isPicked(img._id);
   return createPortal(
     <div className="fade-in fixed inset-0 z-[100] flex flex-col bg-black/92 text-white">
       <div className="flex h-14 shrink-0 items-center gap-3 px-4">
@@ -728,34 +738,26 @@ function Lightbox({
           </>
         )}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 p-4">
-        <button
-          onClick={() => {
-            onPoint(img);
-            if (!picked) onClose();
-          }}
-          className={cn(
-            "flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold",
-            picked ? "bg-white/15 hover:bg-white/25" : "bg-white text-black hover:bg-white/90",
-          )}
-        >
-          {picked ? (
-            <>
-              <X size={16} /> Don't point at this
-            </>
-          ) : (
-            <>
-              <MessageSquarePlus size={16} /> Write a note about this
-            </>
-          )}
-        </button>
-        <Link
-          href={`/s/${storyId}/images/${img._id}`}
-          className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm text-white/80 hover:bg-white/10"
-        >
-          Pin a comment on a spot <ExternalLink size={14} />
-        </Link>
-      </div>
+      {noting === img._id ? (
+        <div className="mx-auto w-full max-w-xl shrink-0 p-4">
+          <NoteBox title="Note about this image" imageIds={[img._id]} onDone={() => setNoting(null)} dark />
+        </div>
+      ) : (
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 p-4">
+          <button
+            onClick={() => setNoting(img._id)}
+            className="flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-black hover:bg-white/90"
+          >
+            <MessageSquarePlus size={16} /> Leave a note on this
+          </button>
+          <Link
+            href={`/s/${storyId}/images/${img._id}`}
+            className="flex h-10 items-center gap-2 rounded-xl px-4 text-sm text-white/80 hover:bg-white/10"
+          >
+            Pin a comment on a spot <ExternalLink size={14} />
+          </Link>
+        </div>
+      )}
     </div>,
     document.body,
   );

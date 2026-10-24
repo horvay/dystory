@@ -1,6 +1,6 @@
-# Dystory plan
+# Dynastory plan
 
-Dystory replaces Idea Board and Video Review with one app on gregarch. A story goes from a script to a published video
+Dynastory replaces Idea Board and Video Review with one app on gregarch. A story goes from a script to a published video
 with one AI session that keeps its memory for the whole story.
 
 ## Decisions (Greg, 2026-10-19)
@@ -9,8 +9,8 @@ with one AI session that keeps its memory for the whole story.
 - Script writing stays separate: the script assistant is Claude Fable, per document, as in Idea Board. Production is
   one resumed Claude Opus session (medium effort) per story, from "Start production" to upload. A new session only
   when the user asks. The worker compacts it at about 300k tokens.
-- No data is copied from the old apps; Dystory starts empty. Muse is dropped.
-- Dystory replaces both old apps, including review of news segments and long-video clips.
+- No data is copied from the old apps; Dynastory starts empty. Muse is dropped.
+- Dynastory replaces both old apps, including review of news segments and long-video clips.
 - Stages: Script → Casting → Voice-over → Stills → Animatic → Animation → SFX → Final cut + QA → Packaging → Upload →
   Vertical Short.
 - Approved voices go into a voice catalog that later stories can cast from.
@@ -65,6 +65,6 @@ Milestones 1 to 6 were built on 2026-10-19; see the README for how it works.
 3. **Stages and review.** Stage bar, approve and send-back, story ↔ cut linking, comments routed to the session.
 4. **Casting and voice-over** end to end with Drama 3, plus the voice catalog.
 5. **Stills through Vertical Short**, following `~/ai/clips/SHORT_STORY_VIDEO_PRODUCTION_GUIDE.md`.
-6. **Cutover.** Point `review_site.py` and `review_watch.py` at Dystory (done 2026-10-19; `REVIEW_SITE` reaches the
+6. **Cutover.** Point `review_site.py` and `review_watch.py` at Dynastory (done 2026-10-19; `REVIEW_SITE` reaches the
    old site). Retiring the two services on serverchy is Greg's call.
 7. **Shared pipeline.** Move the per-story copied scripts into this repo as one tool set.

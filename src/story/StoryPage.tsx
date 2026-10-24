@@ -13,7 +13,6 @@ import { StudioTabs } from "../components/VideoPage";
 import { cn, useMediaQuery } from "../lib/hooks";
 import { timecode } from "../lib/time";
 import { STAGES, stageIndex, stageInfo, type StageId } from "../../shared/stages";
-import { AnchorsProvider } from "./anchors";
 import { DecisionBar } from "./DecisionBar";
 import { StageRail } from "./StageRail";
 import { STATE_TONE } from "./stageUi";
@@ -40,9 +39,7 @@ export function StoryPage({ storyId, tab, item }: { storyId: string; tab?: strin
   }
   const view = VIEWS.includes(tab as StoryView) ? (tab as StoryView) : story.stage === "script" ? "script" : "thread";
   return (
-    <AnchorsProvider>
-      <StoryLayout story={story} view={view} item={item} />
-    </AnchorsProvider>
+<StoryLayout story={story} view={view} item={item} />
   );
 }
 

@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#151517" media="(prefers-color-scheme: dark)" />
     <meta name="robots" content="noindex" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f1d1a'/><path d='M12 9.5v13l11-6.5z' fill='white'/></svg>" />
-    <title>Dystory</title>
+    <title>Dynastory</title>
     <script>
       try {
         const t = localStorage.getItem("dystory.theme");
@@ -159,11 +159,11 @@
       <div class="logo" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 32 32"><path d="M10 6v20l17-10z" fill="white" /></svg>
       </div>
-      <h1>Dystory</h1>
+      <h1>Dynastory</h1>
       <p class="lede">Enter the password to watch and comment.</p>
       <form method="post" action="/__gate/login">
         <input type="hidden" name="next" value="{{next}}" />
-        <!-- Lets password managers file the saved password under a name. -->
+        <!-- Lets password managers file the saved password under a name. Still "Dystory" so saved logins keep matching. -->
         <input class="hidden-user" type="text" name="username" value="Dystory" autocomplete="username" tabindex="-1" aria-hidden="true" readonly />
         <div class="field">
           <input id="password" type="password" name="password" placeholder="Password" aria-label="Password"

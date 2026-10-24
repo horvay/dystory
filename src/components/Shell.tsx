@@ -123,12 +123,12 @@ function useScrollClosesKeyboard() {
   }, []);
 }
 
-/** "(2) Dystory" in the tab while stories wait on people. */
+/** "(2) Dynastory" in the tab while stories wait on people. */
 function useWaitingTitle() {
   const stories = useQuery(api.stories.list, {});
   const n = stories?.filter((s) => s.state === "review" || s.state === "waiting").length ?? 0;
   useEffect(() => {
-    document.title = n ? `(${n}) Dystory` : "Dystory";
+    document.title = n ? `(${n}) Dynastory` : "Dynastory";
   }, [n]);
 }
 

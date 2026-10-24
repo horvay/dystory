@@ -9,7 +9,7 @@ self.addEventListener("push", (event) => {
   try {
     notice = event.data.json();
   } catch {
-    notice = { title: "Dystory", body: event.data ? event.data.text() : "", url: "/" };
+    notice = { title: "Dynastory", body: event.data ? event.data.text() : "", url: "/" };
   }
   event.waitUntil(
     (async () => {

@@ -86,7 +86,7 @@ async function resumeCutOff(ctx: MutationCtx, turn: Doc<"turns">) {
     display: "Picking up after a restart",
     resumes,
     prompt: [
-      `Dystory restarted while you were working, which cut off ${what}.`,
+      `Dynastory restarted while you were working, which cut off ${what}.`,
       "Anything you were running in the foreground (commands, renders, scripts, subagents) was killed. Background jobs started with start_job kept running and will still wake you.",
       "Check what got finished and what was left half-done (partial or missing files, a render that never wrote its output), redo what's needed, and carry on from there.",
     ].join("\n\n"),

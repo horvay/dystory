@@ -2,7 +2,7 @@
 // outlives a turn. B70 work is submitted to the b70q queue (~/b70/queue/README.md),
 // which runs it in its own unit when its turn comes. Everything else runs as a
 // transient systemd user unit. Either way it's outside the app's own service,
-// so restarting Dystory doesn't kill a render, and the exit code lands next to
+// so restarting Dynastory doesn't kill a render, and the exit code lands next to
 // the log, which is how the director learns how it ended.
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";

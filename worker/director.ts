@@ -97,7 +97,7 @@ async function prepareFolder(job: Job, folder: string) {
 
 function buildPrompt(job: Job, folder: string, fresh: boolean) {
   if (job.kind === "compact") return "/compact";
-  const head = `[Dystory] Story "${job.story.title}" · stage: ${stageInfo(job.story.stage).label} · folder: ${folder} · page: ${APP_URL}/s/${job.story._id}`;
+  const head = `[Dynastory] Story "${job.story.title}" · stage: ${stageInfo(job.story.stage).label} · folder: ${folder} · page: ${APP_URL}/s/${job.story._id}`;
   const intro = fresh
     ? "\n\nThis is the start of your session for this story. Read the clips guides named in your instructions before doing production work, then check story_info and the story README (if there is one) for where things stand."
     : "";

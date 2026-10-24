@@ -1,4 +1,4 @@
-# Dystory
+# Dynastory
 
 See README.md for how the app and the director work.
 

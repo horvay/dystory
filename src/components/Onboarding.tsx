@@ -37,7 +37,7 @@ export function Onboarding({ onDone }: { onDone: (userId: string) => void }) {
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <img src="/icon.svg" alt="" className="mx-auto mb-4 size-12 rounded-2xl shadow-soft" />
-          <h1 className="text-2xl font-semibold tracking-tight">Welcome to Dystory</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Welcome to Dynastory</h1>
           <p className="mt-1 text-muted">Write a story together, then watch it become a video.</p>
         </div>
 

@@ -1,9 +1,10 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Dystory
+# Dynastory
 
 A studio for short AI-made comedy videos, from the first line of a script to a published YouTube video. It replaced
-Idea Board (scripts) and Video Review (cuts and comments) on 2026-10-19 and runs on gregarch.
+Idea Board (scripts) and Video Review (cuts and comments) on 2026-10-19 and runs on gregarch. It was called Dystory
+until 2026-10-23; the folder, the systemd service, the repo, storage keys and job units still use `dystory`.
 
 A story moves through stages:
 
@@ -19,9 +20,10 @@ A story moves through stages:
   decision bar: **Approve** (the director starts the next stage) or **Not good…** (say why, by typing or dictating,
   pointing at images or a moment of the cut; it goes back to the director at once). The box under it writes to the
   director. Nobody has to open Cuts, Images or Notes (links under the stages) to finish a stage.
-- **Notes along the way**: click an image's corner or "Note at 0:12" on a cut, then write the note. Notes (and
-  comments made in Cuts, Images and Notes) go to the director together three quiet minutes after the last one; "Send
-  now" skips the wait, and an approval takes waiting notes along as small fixes.
+- **Notes along the way**: "Add a note at 0:12" under a cut, "Leave a note on this" on an image, or the corner checks
+  of several images open a note box right there (amber, so it isn't mistaken for the director's box at the bottom).
+  Notes (and comments made in Cuts, Images and Notes) go to the director together three quiet minutes after the last
+  one; "Send now" skips the wait, and an approval, a "Not good" or a message to the director takes waiting notes along.
 - **Redo or skip**: a stage's `⋯` menu in the left rail ("Redo from here…", "Skip ahead to here…"), confirmed first.
   Clicking a stage only scrolls the thread to it.
 - Voices approved at casting go into the **voice catalog** (Voices in the sidebar), which later stories cast from.
@@ -87,7 +89,7 @@ tailscale funnel --https=10000 off                          # stop public access
 - **Long jobs** (TTS batches, H3 renders) go through `start_job`. B70 work (`gpu: "b70"`, or any command that calls
   `b70-lease`) is submitted to the b70q queue over its socket (`~/b70/queue/README.md`) with owner
   `dystory-<slug>-<kind>`; the daemon runs it in `b70q-<id>.service` when its turn comes. Other jobs run as transient
-  systemd user units (`dystory-<slug>-…`). Restarting Dystory kills neither. The director checks every 15 s, shows a
+  systemd user units (`dystory-<slug>-…`). Restarting Dynastory kills neither. The director checks every 15 s, shows a
   waiting B70 job's place in line, and wakes the AI with the job's exit code and log tail. Logs are in
   `<story folder>/.director/jobs/`. Stop buttons in the decision bar stop the unit or kill the ticket.
 - **Restarts.** A restart kills whatever turn is running (and its foreground commands). At startup the worker marks
@@ -110,7 +112,7 @@ tailscale funnel --https=10000 off                          # stop public access
   one turn.
 
 - **Notifications.** "Turn on notifications" in the sidebar subscribes that browser to Web Push (Chrome
-  notifications, even with no Dystory tab open). When a turn ends with the story handed back to people (ready for
+  notifications, even with no Dynastory tab open). When a turn ends with the story handed back to people (ready for
   review, a question, a failure, or a reply), `director.finish` returns the notification and `worker/notify.ts` sends
   it to every subscribed browser. Nothing is sent while a background job runs, when another turn is already queued,
   or when someone stopped the turn. The service worker (`public/sw.js`) skips it if that story is open and focused.

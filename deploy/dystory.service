@@ -1,5 +1,5 @@
 [Unit]
-Description=Dystory (~/.t3/projects/dystory): Convex, web, media, gate, dictation, script assistant, director
+Description=Dynastory (~/.t3/projects/dystory): Convex, web, media, gate, dictation, script assistant, director
 After=network-online.target
 
 [Service]
