@@ -8,7 +8,7 @@ until 2026-10-23; the folder, the systemd service, the repo, storage keys and jo
 
 A story moves through stages:
 
-**Script → Casting → Voice-over → Stills → Animatic → Animation → Sound → Final cut → Packaging → Upload → Short**
+**Script → Casting → Voice-over → Animatic → Animation → Sound → Final cut → Packaging → Upload → Short**
 
 - **Script**: write it with the script assistant (Claude Fable) in the editor Idea Board had: live co-editing, the
   people chat, history, comedy styles, dictation.

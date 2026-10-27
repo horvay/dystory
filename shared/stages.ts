@@ -21,16 +21,10 @@ export const STAGES = [
     goal: `Voice the whole script with the approved voices (Drama 3 on the B70, 8 takes per line, picked as a matching set), build the VO master and its timeline, and post a voice-only review cut: a dark card with the speaker and the line on screen for each line. WhisperX on the master must read the script word for word.`,
   },
   {
-    id: "stills",
-    label: "Stills",
-    hint: "Character sheets, sets and one still per shot.",
-    goal: `Make the stills: character sheets, sets, and one still per planned shot, with identity text kept identical across stills. Post every still to the Images tab (post_image) so each can be commented on, then plan the shots (shots_vNN.py).`,
-  },
-  {
     id: "animatic",
     label: "Animatic",
     hint: "Stills cut to the voice-over, with captions.",
-    goal: `Assemble the animatic: the stills cut to the approved VO master following the shot plan, with authored captions burned in. Post it as a review cut.`,
+    goal: `Make the stills: character sheets, sets, and one still per planned shot, with identity text kept identical across stills. Post every still to the Images tab (post_image) so each can be commented on, then plan the shots (shots_vNN.py). Assemble the animatic: the stills cut to the approved VO master following the shot plan, with authored captions burned in, and post it as a review cut. Don't stop for a review of the stills on their own: people approve the stills and the animatic together, so request review once the animatic is posted, with the animatic and the stills on the card.`,
   },
   {
     id: "animation",

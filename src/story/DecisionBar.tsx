@@ -22,7 +22,6 @@ import type { StoryData } from "./StoryPage";
 const APPROVE: Partial<Record<StageId, string>> = {
   casting: "Approve the cast",
   voiceover: "Approve the voices",
-  stills: "Approve the stills",
   animatic: "Approve the animatic",
   animation: "Approve the animation",
   sfx: "Approve the sound",
