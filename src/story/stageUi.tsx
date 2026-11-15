@@ -96,10 +96,13 @@ export function NewStoryDialog({ onClose, docId, title: initial }: { onClose: ()
 export function StageMoveDialog({
   story,
   to,
+  step,
   pending = 0,
   onClose,
 }: {
   story: Story;
+  /** The open review is for this step inside the stage: approving it doesn't move the story on. */
+  step?: string;
   /** Notes not yet sent to the director; they go with an approval. */
   pending?: number;
   /** Missing: approve and go to the next stage. */
@@ -118,7 +121,9 @@ export function StageMoveDialog({
   const title = !back
     ? story.stage === "script"
       ? "Put the script into production?"
-      : `Approve ${current.label}?`
+      : step
+        ? `Approve ${step}?`
+        : `Approve ${current.label}?`
     : to === "script"
       ? "Back to the script?"
       : stageIndex(to!) < stageIndex(story.stage)
@@ -127,7 +132,9 @@ export function StageMoveDialog({
   const body = !back
     ? story.stage === "script"
       ? "The director starts on casting: it reads the script and picks or designs a voice for every character. You'll review auditions before any line is voiced."
-      : story.stage === "short"
+      : step
+        ? `The director carries on with ${current.label}. You'll still approve the ${current.label.toLowerCase()} itself when it's done.`
+        : story.stage === "short"
         ? "That marks the story as published."
         : `The director moves on to ${stageInfo(nextStage(story.stage)).label}.`
     : to === "script"

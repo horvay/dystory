@@ -2,7 +2,20 @@
 // for it (Approve, Not good, Start production), notes still waiting to go to
 // the director, and the one box for writing to it.
 import { useMutation, useQuery } from "convex/react";
-import { ArrowUp, Check, CircleStop, Clapperboard, Hourglass, LoaderCircle, Play, Send, ThumbsDown, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleStop,
+  Clapperboard,
+  Hourglass,
+  LoaderCircle,
+  Play,
+  Send,
+  ThumbsDown,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { api } from "../../convex/_generated/api";
@@ -32,6 +45,25 @@ const APPROVE: Partial<Record<StageId, string>> = {
 };
 export const approveLabel = (stage: StageId) => APPROVE[stage] ?? `Approve ${stageInfo(stage).label}`;
 
+/** On a phone the script's bar folds down to a strip while writing; kept per device. */
+const SCRIPT_BAR_KEY = "dystory.scriptBarCollapsed";
+function useScriptBarCollapsed() {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SCRIPT_BAR_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const set = (v: boolean) => {
+    setCollapsed(v);
+    try {
+      localStorage.setItem(SCRIPT_BAR_KEY, v ? "1" : "0");
+    } catch {}
+  };
+  return [collapsed, set] as const;
+}
+
 export function DecisionBar({ story, composer }: { story: StoryData; composer: boolean }) {
   const [approving, setApproving] = useState(false);
   const [notGood, setNotGood] = useState(false);
@@ -46,21 +78,39 @@ export function DecisionBar({ story, composer }: { story: StoryData; composer: b
     return true;
   };
   const review = story.state === "review";
+  // A review of one step inside the stage (the character looks), not the stage.
+  const step = review ? story.openRequest?.step : undefined;
   const question = story.state === "waiting" && story.openRequest?.kind === "question";
+  const [scriptCollapsed, setScriptCollapsed] = useScriptBarCollapsed();
 
   let bar: ReactNode;
   if (story.stage === "script") {
     bar = (
-      <Bar
-        glow="accent"
-        icon={<Clapperboard size={18} />}
-        title="Script"
-        text="When the script is ready, put it into production. The director takes it from there and shows you each stage here."
-      >
-        <BigButton onClick={() => setApproving(true)}>
-          <Play size={16} /> Start production
-        </BigButton>
-      </Bar>
+      <>
+        {scriptCollapsed && (
+          <button
+            onClick={() => setScriptCollapsed(false)}
+            className="flex h-9 w-full items-center gap-2 rounded-xl border border-accent/40 bg-accent/6 px-3 text-sm sm:hidden"
+            aria-label="Show the Start production card"
+          >
+            <Clapperboard size={15} className="shrink-0 text-accent" />
+            <span className="min-w-0 flex-1 truncate text-left text-ink-2">Ready? Start production</span>
+            <ChevronUp size={16} className="shrink-0 text-muted" />
+          </button>
+        )}
+        <Bar
+          glow="accent"
+          icon={<Clapperboard size={18} />}
+          title="Script"
+          text="When the script is ready, put it into production. The director takes it from there and shows you each stage here."
+          className={scriptCollapsed ? "hidden sm:flex" : undefined}
+          onCollapse={() => setScriptCollapsed(true)}
+        >
+          <BigButton onClick={() => setApproving(true)}>
+            <Play size={16} /> Start production
+          </BigButton>
+        </Bar>
+      </>
     );
   } else if (story.state === "done") {
     bar = <Bar icon={<Check size={18} />} title="Published" text="The story is done." />;
@@ -69,7 +119,7 @@ export function DecisionBar({ story, composer }: { story: StoryData; composer: b
       <Bar
         glow="accent"
         icon={<Check size={18} />}
-        title={`${stage.label} is ready for your OK`}
+        title={step ? `Check ${step}` : `${stage.label} is ready for your OK`}
         text={story.statusLine}
         onShow={story.openRequest ? showRequest : undefined}
       >
@@ -83,7 +133,7 @@ export function DecisionBar({ story, composer }: { story: StoryData; composer: b
           <ThumbsDown size={16} /> Not good…
         </button>
         <BigButton onClick={() => setApproving(true)}>
-          <Check size={17} /> {approveLabel(story.stage)}
+          <Check size={17} /> {step ? `Approve ${step}` : approveLabel(story.stage)}
         </BigButton>
       </Bar>
     );
@@ -121,7 +171,9 @@ export function DecisionBar({ story, composer }: { story: StoryData; composer: b
           <Composer story={story} notGood onNotGoodDone={() => setNotGood(false)} />
         )}
       </div>
-      {approving && <StageMoveDialog story={story} pending={pending?.count ?? 0} onClose={() => setApproving(false)} />}
+      {approving && (
+        <StageMoveDialog story={story} step={step} pending={pending?.count ?? 0} onClose={() => setApproving(false)} />
+      )}
     </div>
   );
 }
@@ -132,6 +184,8 @@ function Bar({
   title,
   text,
   onShow,
+  onCollapse,
+  className,
   children,
 }: {
   glow?: "accent" | "amber";
@@ -139,17 +193,30 @@ function Bar({
   title: string;
   text?: string;
   onShow?: () => boolean;
+  /** Shows a fold-down button on phones. */
+  onCollapse?: () => void;
+  className?: string;
   children?: ReactNode;
 }) {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border px-4 py-3",
+        "relative flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border px-4 py-3",
         glow === "accent" && "decision-glow border-accent/60 bg-accent/6",
         glow === "amber" && "decision-glow-amber border-amber-500/60 bg-amber-500/8",
         !glow && "border-line bg-surface",
+        className,
       )}
     >
+      {onCollapse && (
+        <button
+          onClick={onCollapse}
+          className="absolute top-2 right-2 grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 sm:hidden"
+          aria-label="Fold this away"
+        >
+          <ChevronDown size={18} />
+        </button>
+      )}
       <span
         className={cn(
           "grid size-9 shrink-0 place-items-center rounded-xl",
@@ -158,7 +225,7 @@ function Bar({
       >
         {icon}
       </span>
-      <div className="min-w-0 flex-1 basis-56">
+      <div className={cn("min-w-0 flex-1 basis-56", onCollapse && "pr-8 sm:pr-0")}>
         <p className="font-semibold">{title}</p>
         {text && (
           <p className="line-clamp-2 text-sm text-ink-2" title={text}>
@@ -329,8 +396,9 @@ function Composer({
     }
   };
 
+  const step = story.openRequest?.kind === "review" ? story.openRequest.step : undefined;
   const placeholder = notGood
-    ? `What's wrong with the ${stageInfo(story.stage).label.toLowerCase()}?`
+    ? `What's wrong with ${step ?? `the ${stageInfo(story.stage).label.toLowerCase()}`}?`
     : story.state === "waiting"
         ? "Answer the director…"
         : "Write to the director…";

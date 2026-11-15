@@ -11,6 +11,7 @@
 import type * as ai from "../ai.js";
 import type * as bots from "../bots.js";
 import type * as categories from "../categories.js";
+import type * as characters from "../characters.js";
 import type * as chat from "../chat.js";
 import type * as comments from "../comments.js";
 import type * as crons from "../crons.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   bots: typeof bots;
   categories: typeof categories;
+  characters: typeof characters;
   chat: typeof chat;
   comments: typeof comments;
   crons: typeof crons;

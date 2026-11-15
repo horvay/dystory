@@ -801,6 +801,14 @@ button {
 .panel-slide-in {
   animation: panel-slide-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+.sheet-up {
+  animation: sheet-up 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -820,6 +828,7 @@ button {
   .float-b,
   .panel-in,
   .panel-slide-in,
+  .sheet-up,
   .chat-ref-draft,
   .typing-bounce {
     animation: none;

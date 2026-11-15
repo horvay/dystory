@@ -339,8 +339,8 @@ function Trigger({ turn, author }: { turn: Turn; author?: Doc<"users"> }) {
       </div>
     );
   }
-  if (turn.kind === "stage") {
-    const approved = /approved|into production/.test(turn.display);
+  if (turn.kind === "stage" || turn.kind === "step") {
+    const approved = turn.kind === "step" || /approved|into production/.test(turn.display);
     return (
       <div className="flex justify-center">
         <span
@@ -439,7 +439,7 @@ function RequestCard({
             question ? "bg-amber-500/14 text-amber-700 dark:text-amber-300" : "bg-accent/12 text-accent",
           )}
         >
-          {question ? "Question" : `${label} · for review`}
+          {question ? "Question" : `${label} · ${request.step ?? "for review"}`}
         </span>
         <p className="min-w-0 flex-1 text-sm font-medium">{request.message}</p>
         {request.status === "superseded" && (

@@ -15,6 +15,7 @@ import {
   Plus,
   Search,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Link, useLocation, useRoute } from "wouter";
@@ -163,6 +164,7 @@ export function Sidebar({ onSwitchUser }: { onSwitchUser: () => void }) {
           <div className="mt-2 space-y-0.5 px-2">
             <NavLink href="/reviews" active={location.startsWith("/reviews") || location.startsWith("/v/")} icon={Film} label="Reviews" />
             <NavLink href="/voices" active={location.startsWith("/voices")} icon={AudioLines} label="Voices" />
+            <NavLink href="/characters" active={location.startsWith("/characters")} icon={UserRound} label="Characters" />
             <NotifyToggle />
           </div>
         </>
@@ -251,7 +253,7 @@ export function Sidebar({ onSwitchUser }: { onSwitchUser: () => void }) {
             className="mx-1 flex items-center gap-2 rounded-lg bg-amber-500/12 px-2.5 py-2 text-xs text-amber-600"
             title="Start the app with `bun run dev` to run the AI worker"
           >
-            <span className="size-1.5 rounded-full bg-amber-500" /> Claude is offline
+            <span className="size-1.5 rounded-full bg-amber-500" /> The script assistant is offline
           </div>
         )}
         {directorOffline && (

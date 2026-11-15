@@ -1,8 +1,8 @@
 // Script assistant: watches Convex for queued requests from a document's AI
-// panel and runs each one through Claude (Agent SDK, Claude Fable by default),
-// using the Claude Code login on this machine. The agent edits the document
-// through tools that call Convex mutations, so every change streams live to
-// everyone who has the document open.
+// panel and runs each one through the model picked for it, Claude (Agent SDK,
+// Claude Fable by default) or Muse (`muse serve`), using the logins already
+// on this machine. The model edits the document through tools that call Convex
+// mutations, so every change streams live to everyone who has the document open.
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -13,22 +13,25 @@ import {
 import { ConvexClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { agentInfo, type AiAgent } from "../shared/agents";
 import { COMEDY_STYLES, type ComedyStyle } from "../shared/comedy";
 import { DOC_TOOLS, errorText, toolLabel } from "./doc-tools";
+import { createMuse } from "./muse";
 
 const CONVEX_URL = process.env.VITE_CONVEX_URL;
 if (!CONVEX_URL) throw new Error("VITE_CONVEX_URL is not set (run `bun run dev` once to create .env.local)");
 
-const MODEL = process.env.AI_MODEL || "claude-fable-5-1";
+const MODEL = process.env.AI_MODEL || "claude-fable-5-2";
 const MAX_CONCURRENT = 3;
 const INLINE_DOC_LIMIT = 60_000; // characters of markdown to include in the prompt
 const WORKSPACE = resolve(import.meta.dir, "../.ai-workspace");
 mkdirSync(WORKSPACE, { recursive: true });
 
 const convex = new ConvexClient(CONVEX_URL);
+const muse = createMuse(convex, WORKSPACE);
 const active = new Map<string, Id<"docs"> | null>(); // requestId -> docId
 
-const basePrompt = `You are Claude, a writing partner built into Dynastory, a shared studio where a small team (often a couple) writes scripts for short AI-made comedy videos and turns them into finished videos. You help in the document editor: ideas, scripts, articles and plans. A separate production AI makes the videos once a script goes into production; you only work on the writing.
+const basePrompt = (name: string) => `You are ${name}, a writing partner built into Dynastory, a shared studio where a small team (often a couple) writes scripts for short AI-made comedy videos and turns them into finished videos. You help in the document editor: ideas, scripts, articles and plans. A separate production AI makes the videos once a script goes into production; you only work on the writing.
 
 Scripts here become videos with AI voices and AI animation. When writing a screenplay, keep one line per spoken beat with the speaker's name, so lines map one to one to voice-over takes later.
 
@@ -39,6 +42,7 @@ Several people may be looking at and typing in the document while you work. Your
 - If an edit fails because the text wasn't found, someone probably just changed it: call read_document and try again.
 - If the request is a question or asks for feedback rather than changes, answer in chat and leave the document alone.
 - Use web search/fetch when facts or research would help.
+- When someone wants a script like another story, or asks what one of the other stories did, call list_stories, then read_story with the title or the folder name. Borrow how that screenplay is built: who speaks, how a scene turns, how long it runs, the tone. Write new jokes, a new situation and new lines. Leave its look, cast and voices alone unless they ask. For an ordinary edit or a question about this document, leave the other stories alone.
 
 Your chat reply appears in a narrow side panel. Keep it short: say what you changed (or answer the question) in a few sentences. Never paste the whole document into the chat.
 
@@ -48,8 +52,8 @@ const STYLE_FILE = resolve(import.meta.dir, "writing-style.md");
 const COMEDY_DIR = resolve(import.meta.dir, "comedy");
 
 // Re-read the style rules for every request so edits apply without a restart.
-function systemPrompt(comedyStyle: ComedyStyle | undefined): string {
-  const parts = [basePrompt, readFileSync(STYLE_FILE, "utf8")];
+function systemPrompt(agent: AiAgent, comedyStyle: ComedyStyle | undefined): string {
+  const parts = [basePrompt(agentInfo(agent).name), readFileSync(STYLE_FILE, "utf8")];
   if (comedyStyle) parts.push(comedyGuide(comedyStyle));
   return parts.join("\n\n");
 }
@@ -74,11 +78,13 @@ ${skill.trim()}
 ${refs.join("\n\n")}`;
 }
 
-function docTools(requestId: Id<"aiRequests">) {
+function docTools(requestId: Id<"aiRequests">, docId: Id<"docs">) {
   return createSdkMcpServer({
     name: "doc",
     version: "1.0.0",
-    tools: DOC_TOOLS.map((t) => tool(t.name, t.description, t.schema, (args: any) => t.call({ convex, requestId }, args))),
+    tools: DOC_TOOLS.map((t) =>
+      tool(t.name, t.description, t.schema, (args: any) => t.call({ convex, requestId, docId }, args)),
+    ),
   });
 }
 
@@ -87,6 +93,8 @@ const ALLOWED_TOOLS = [
   "mcp__doc__edit_document",
   "mcp__doc__rewrite_document",
   "mcp__doc__set_title",
+  "mcp__doc__list_stories",
+  "mcp__doc__read_story",
   "WebSearch",
   "WebFetch",
 ];
@@ -96,6 +104,15 @@ const claimRequest = (requestId: Id<"aiRequests">) => convex.mutation(api.ai.cla
 
 function buildPrompt(job: Job): string {
   const parts: string[] = [];
+  if (job.catchUp.length) {
+    // Replies from the other model, which this one hasn't seen (people switched mid-chat).
+    const turns = job.catchUp.map(
+      (t) => `${t.requesterName} asked ${t.agentName}:\n${t.prompt}\n\n${t.agentName} replied:\n${t.response || "(no reply)"}`,
+    );
+    parts.push(
+      `Earlier in this conversation, people asked another model. You didn't see these, so here they are:\n<earlier>\n${turns.join("\n\n---\n\n")}\n</earlier>`,
+    );
+  }
   parts.push(`${job.requesterName} asks:\n${job.prompt}`);
   if (job.selection) {
     parts.push(
@@ -119,7 +136,9 @@ async function runRequest(requestId: Id<"aiRequests">) {
     return;
   }
   const style = job.comedyStyle ? `, ${job.comedyStyle}` : "";
-  console.log(`[ai] ${job.requesterName} → script assistant (${job.effort} effort${style}): ${job.prompt.slice(0, 80)}`);
+  console.log(
+    `[ai] ${job.requesterName} → ${agentInfo(job.agent).name} (${job.effort} effort${style}): ${job.prompt.slice(0, 80)}`,
+  );
 
   const abort = new AbortController();
   const unsubscribe = convex.onUpdate(api.ai.status, { requestId }, (status) => {
@@ -153,7 +172,7 @@ async function runRequest(requestId: Id<"aiRequests">) {
     const q = query({
       prompt: buildPrompt(job),
       options: {
-        systemPrompt: systemPrompt(job.comedyStyle),
+        systemPrompt: systemPrompt(job.agent, job.comedyStyle),
         model: MODEL,
         effort: job.effort,
         cwd: WORKSPACE,
@@ -163,7 +182,7 @@ async function runRequest(requestId: Id<"aiRequests">) {
         // rather than prompting, since nobody is at a terminal to approve it.
         allowedTools: ALLOWED_TOOLS,
         permissionMode: "dontAsk",
-        mcpServers: { doc: docTools(requestId) },
+        mcpServers: { doc: docTools(requestId, job.docId) },
         includePartialMessages: true,
         abortController: abort,
         resume,
@@ -206,14 +225,31 @@ async function runRequest(requestId: Id<"aiRequests">) {
 
   let outcome: { sessionId?: string; error?: string };
   try {
-    try {
-      outcome = await attempt(job.sessionId);
-    } catch (err) {
-      // A stale session (e.g. its transcript was deleted) shouldn't block the
-      // request; retry once as a fresh conversation if nothing happened yet.
-      if (!job.sessionId || abort.signal.aborted || committed) throw err;
-      console.warn(`[ai] resume failed, starting fresh: ${errorText(err)}`);
-      outcome = await attempt(undefined);
+    if (job.agent === "muse") {
+      // Muse has no separate system prompt; the instructions lead each message.
+      outcome = await muse.run({
+        requestId,
+        docId: job.docId,
+        sessionId: job.sessionId,
+        effort: job.effort,
+        text: `<instructions>\n${systemPrompt(job.agent, job.comedyStyle)}\n</instructions>\n\n${buildPrompt(job)}`,
+        signal: abort.signal,
+        onText: (text) => {
+          committed = text;
+          pushResponse();
+        },
+        onActivity: logActivity,
+      });
+    } else {
+      try {
+        outcome = await attempt(job.sessionId);
+      } catch (err) {
+        // A stale session (e.g. its transcript was deleted) shouldn't block the
+        // request; retry once as a fresh conversation if nothing happened yet.
+        if (!job.sessionId || abort.signal.aborted || committed) throw err;
+        console.warn(`[ai] resume failed, starting fresh: ${errorText(err)}`);
+        outcome = await attempt(undefined);
+      }
     }
   } catch (err) {
     outcome = { error: abort.signal.aborted ? undefined : errorText(err) };
@@ -257,7 +293,7 @@ async function main() {
     queue = rows.map((r) => ({ _id: r._id, docId: r.docId }));
     pump();
   });
-  console.log(`[ai] script assistant ready (model: ${MODEL})`);
+  console.log(`[ai] script assistant ready (Claude: ${MODEL}; Muse via \`muse serve\`)`);
 }
 
 main().catch((err) => {

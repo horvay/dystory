@@ -3,6 +3,7 @@ import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/s
 import type { Doc, Id } from "./_generated/dataModel";
 import { slugify } from "../shared/director";
 import { nextStage, stageIndex, stageInfo, type StageId } from "../shared/stages";
+import { docMarkdown } from "./ai";
 import { insertDoc } from "./docs";
 import { takePending } from "./feedback";
 import { closeRequests } from "./requests";
@@ -95,7 +96,7 @@ export const get = query({
     ).find((r) => r.status === "open");
     return {
       ...(await summary(ctx, story)),
-      openRequest: open ? { _id: open._id, kind: open.kind } : null,
+      openRequest: open ? { _id: open._id, kind: open.kind, step: open.step } : null,
       busy: running.some((t) => t.status === "running"),
       queued: running.filter((t) => t.status === "queued").length,
       jobs: waiting.map((w) => ({ _id: w._id, note: w.note, at: w.at, unit: w.unit, queue: w.queue })),
@@ -112,6 +113,25 @@ export const byDoc = query({
       .withIndex("by_doc", (q) => q.eq("docId", docId))
       .first();
     return story && !story.trashed ? { _id: story._id, title: story.title, stage: story.stage } : null;
+  },
+});
+
+/**
+ * The live screenplay for a story, by its folder name. A mutation because
+ * reading the document goes through prosemirror sync, which only runs in one.
+ * The workers call it from list_stories / read_story. Trashed stories are hidden.
+ */
+export const scriptBySlug = mutation({
+  args: { slug: v.string() },
+  handler: async (ctx, { slug }) => {
+    const story = await ctx.db
+      .query("stories")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!story || story.trashed) return null;
+    const doc = await ctx.db.get(story.docId);
+    if (!doc) return null;
+    return { title: story.title, slug: story.slug, stage: story.stage, markdown: await docMarkdown(ctx, story.docId) };
   },
 });
 
@@ -272,22 +292,62 @@ async function moveTo(
   });
 }
 
-/** Approves the current stage (or puts the script into production) and starts the next one. */
+/**
+ * Approves the current stage (or puts the script into production) and starts
+ * the next one. When the open review is for a step inside the stage (the
+ * character looks), the director carries on with the stage instead.
+ */
 export const approve = mutation({
   args: { storyId: v.id("stories"), userId: v.id("users"), note: v.optional(v.string()) },
   handler: async (ctx, { storyId, userId, note }) => {
     const story = await ctx.db.get(storyId);
     if (!story) throw new Error("Story not found");
     if (story.stage === "done") return;
+    const step = (await openReview(ctx, storyId))?.step;
     await closeRequests(ctx, storyId, "approved", userId);
     // Notes still waiting to go out ride along with the approval.
     const pending = await takePending(ctx, storyId);
     const extra = pending.length
-      ? `Notes that came in with the approval (small fixes, not blockers; do them as part of the next stage):\n${pending.join("\n")}`
+      ? `Notes that came in with the approval (small fixes, not blockers; do them as part of ${step ? "the rest of this stage" : "the next stage"}):\n${pending.join("\n")}`
       : "";
-    await moveTo(ctx, story, userId, nextStage(story.stage), note, extra);
+    if (step) await approveStep(ctx, story, userId, step, note?.trim() || undefined, extra);
+    else await moveTo(ctx, story, userId, nextStage(story.stage), note, extra);
   },
 });
+
+async function openReview(ctx: QueryCtx, storyId: Id<"stories">) {
+  const recent = await ctx.db
+    .query("requests")
+    .withIndex("by_story", (q) => q.eq("storyId", storyId))
+    .order("desc")
+    .take(5);
+  return recent.find((r) => r.status === "open" && r.kind === "review");
+}
+
+async function approveStep(
+  ctx: MutationCtx,
+  story: Doc<"stories">,
+  userId: Id<"users">,
+  step: string,
+  note: string | undefined,
+  extra: string,
+) {
+  const who = (await ctx.db.get(userId))?.name ?? "Someone";
+  const info = stageInfo(story.stage);
+  await ctx.db.patch(story._id, {
+    state: "working",
+    statusLine: `Carrying on with ${info.label}`,
+    updatedAt: Date.now(),
+  });
+  await queueTurn(ctx, story._id, {
+    kind: "step",
+    prompt: `${who} approved ${step}. Carry on with ${info.label}; the stage itself isn't approved yet.${note ? `\n\n${who} adds: ${note}` : ""}
+
+Goal for ${info.label}: ${info.goal}${extra ? `\n\n${extra}` : ""}`,
+    display: `${step.charAt(0).toUpperCase()}${step.slice(1)} approved${note ? `: ${note}` : ""}`,
+    requestedBy: userId,
+  });
+}
 
 /** Moves the story to any stage: back to redo work, or forward to skip one. */
 export const setStage = mutation({

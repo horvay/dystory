@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { AI_AGENTS } from "../shared/agents";
 import { COMEDY_STYLES } from "../shared/comedy";
 import { STAGE_IDS, STAGE_STATES } from "../shared/stages";
 
@@ -20,6 +21,9 @@ export const aiStatus = v.union(
   v.literal("error"),
   v.literal("cancelled"),
 );
+
+// Which model answers a script-assistant request; picked under the chat box.
+export const aiAgent = v.union(...AI_AGENTS.map((a) => v.literal(a.id)));
 
 // How hard the AI thinks before answering; picked with the slider in the AI panel.
 export const aiEffort = v.union(v.literal("low"), v.literal("medium"), v.literal("high"));
@@ -58,6 +62,7 @@ export const stageState = v.union(...STAGE_STATES.map((s) => v.literal(s)));
 export const turnKind = v.union(
   v.literal("message"), // someone wrote to it in the story's thread
   v.literal("stage"), // a stage started (approval, or a move back)
+  v.literal("step"), // a step inside the stage approved (e.g. the character looks)
   v.literal("feedback"), // a batch of review comments
   v.literal("wake"), // a background job it was waiting on finished, or a timer
   v.literal("compact"), // the director compacting a long session
@@ -99,9 +104,10 @@ export default defineSchema({
     lastSnapshotVersion: v.number(),
     // People who edited since the last snapshot, credited on the next one.
     pendingAuthors: v.array(v.id("users")),
-    // The script assistant's Claude session (Agent SDK), so follow-up
-    // requests keep their context.
+    // Each model's session, so follow-ups keep their own context:
+    // aiSessionId is Claude's (Agent SDK), museSessionId is Muse's.
     aiSessionId: v.optional(v.string()),
+    museSessionId: v.optional(v.string()),
     // "New conversation" moves this forward; the chat panel hides older requests.
     conversationStartedAt: v.optional(v.number()),
     // Start of the text, for previews on the home screen.
@@ -135,6 +141,8 @@ export default defineSchema({
     prompt: v.string(),
     selection: v.optional(v.string()),
     requestedBy: v.id("users"),
+    // Missing on requests made before Muse was added (they went to Claude).
+    agent: v.optional(aiAgent),
     // Missing on requests made before the effort slider existed.
     effort: v.optional(aiEffort),
     comedyStyle: v.optional(aiComedyStyle),
@@ -346,6 +354,9 @@ export default defineSchema({
     turnId: v.id("turns"),
     kind: v.union(v.literal("review"), v.literal("question")),
     message: v.string(),
+    // A review of one step inside the stage ("the character looks"): approving
+    // it lets the director carry on with the stage instead of moving on.
+    step: v.optional(v.string()),
     // What to look at: cuts and images posted for this round.
     versionIds: v.array(v.id("versions")),
     imageIds: v.array(v.id("images")),
@@ -405,6 +416,26 @@ export default defineSchema({
     audioFile: v.string(),
     duration: v.number(),
     // Generation notes: model, cues, capacity, anything needed to reuse it.
+    notes: v.optional(v.string()),
+    storyId: v.optional(v.id("stories")),
+    createdBy: v.id("users"),
+    trashed: v.boolean(),
+  }).index("by_trashed", ["trashed"]),
+
+  // Character profiles approved in a story, ready to reuse in later ones.
+  characters: defineTable({
+    name: v.string(),
+    // Identity text used in every still prompt: face, hair, wardrobe, props.
+    description: v.string(),
+    // The art style the model sheet is drawn in ("1950s PSA cartoon").
+    style: v.optional(v.string()),
+    // The model sheet: a file on this machine, and a copy under /media/images/.
+    sheetPath: v.string(),
+    file: v.string(),
+    thumb: v.string(),
+    width: v.number(),
+    height: v.number(),
+    // How it was made and how to use it: prompts, model, quirks.
     notes: v.optional(v.string()),
     storyId: v.optional(v.id("stories")),
     createdBy: v.id("users"),

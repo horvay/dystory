@@ -15,7 +15,8 @@ import { Fragment, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { schemaExtensions } from "../../shared/extensions";
-import { Avatar, ClaudeAvatar } from "../components/Avatar";
+import { agentInfo } from "../../shared/agents";
+import { AgentAvatar, Avatar } from "../components/Avatar";
 import { Modal } from "../components/Modal";
 import { useMe } from "../lib/identity";
 import { cn } from "../lib/hooks";
@@ -28,8 +29,8 @@ const KIND: Record<Doc<"docVersions">["kind"], { label: string; icon: LucideIcon
   initial: { label: "Created", icon: FilePlus2 },
   auto: { label: "Edits", icon: Clock },
   manual: { label: "Saved version", icon: Bookmark },
-  "ai-before": { label: "Before Claude's changes", icon: Clock },
-  "ai-after": { label: "Claude's changes", icon: Sparkles },
+  "ai-before": { label: "Before the assistant's changes", icon: Clock },
+  "ai-after": { label: "The assistant's changes", icon: Sparkles },
   "before-restore": { label: "Before restoring", icon: Clock },
   restore: { label: "Restored", icon: RotateCcw },
 };
@@ -41,7 +42,10 @@ function versionTitle(
   v: Pick<VersionRow, "kind" | "label" | "authors">,
   users: Map<Id<"users">, UserLite>,
   meId: Id<"users">,
+  agentName = "Claude",
 ): string {
+  if (v.kind === "ai-before") return `Before ${agentName}'s changes`;
+  if (v.kind === "ai-after") return `${agentName}'s changes`;
   if (v.kind === "manual" || v.kind === "restore") return v.label ?? KIND[v.kind].label;
   if (v.kind !== "auto") return KIND[v.kind].label;
   const mine = v.authors.includes(meId);
@@ -57,6 +61,7 @@ function versionTitle(
 export function HistoryPanel({ docId, onClose }: { docId: Id<"docs">; onClose: () => void }) {
   const me = useMe();
   const versions = useQuery(api.docVersions.list, { docId });
+  const requests = useQuery(api.ai.listForDoc, { docId });
   const users = useQuery(api.users.list);
   const saveNamed = useMutation(api.docVersions.saveNamed);
   const [naming, setNaming] = useState(false);
@@ -117,7 +122,7 @@ export function HistoryPanel({ docId, onClose }: { docId: Id<"docs">; onClose: (
       )}
 
       <div className="scroll-thin flex-1 overflow-y-auto px-2 py-2">
-        <p className="px-2 pb-1 text-xs text-muted">Saved automatically every minute and around every Claude edit.</p>
+        <p className="px-2 pb-1 text-xs text-muted">Saved automatically every minute and around every AI edit.</p>
         {groups.map((g) => (
           <Fragment key={g.day}>
             <div className="sticky top-0 z-10 bg-surface/95 px-2 pt-3 pb-1.5 text-[11px] font-semibold tracking-wider text-muted uppercase backdrop-blur">
@@ -125,6 +130,7 @@ export function HistoryPanel({ docId, onClose }: { docId: Id<"docs">; onClose: (
             </div>
             {g.rows.map((v) => {
               const kind = KIND[v.kind];
+              const who = agentInfo(requests?.find((r) => r._id === v.aiRequestId)?.agent).name;
               return (
                 <button
                   key={v._id}
@@ -141,7 +147,7 @@ export function HistoryPanel({ docId, onClose }: { docId: Id<"docs">; onClose: (
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">
-                      {versionTitle(v, userById, me._id)}
+                      {versionTitle(v, userById, me._id, who)}
                     </span>
                     {v.byAi && v.label && (
                       <span className="block truncate text-xs text-muted italic">“{v.label}”</span>
@@ -159,7 +165,7 @@ export function HistoryPanel({ docId, onClose }: { docId: Id<"docs">; onClose: (
                     </span>
                   </span>
                   <span className="flex shrink-0 -space-x-1.5 pt-0.5">
-                    {v.byAi && <ClaudeAvatar size={20} ring />}
+                    {v.byAi && <AgentAvatar agent={requests?.find((r) => r._id === v.aiRequestId)?.agent} size={20} ring />}
                     {v.authors.map((a) => {
                       const u = userById.get(a);
                       return u ? <Avatar key={a} name={u.name} color={u.color} size={20} ring /> : null;

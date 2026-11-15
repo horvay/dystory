@@ -10,8 +10,10 @@ A story moves through stages:
 
 **Script → Casting → Voice-over → Animatic → Animation → Sound → Final cut → Packaging → Upload → Short**
 
-- **Script**: write it with the script assistant (Claude Fable) in the editor Idea Board had: live co-editing, the
-  people chat, history, comedy styles, dictation.
+- **Script**: write it with the script assistant (Claude Fable or Muse) in the editor Idea Board had: live
+  co-editing, the people chat, history, comedy styles, dictation. The picker under the chat box chooses the
+  model, and each document keeps a separate conversation with each one. It can read the other stories'
+  screenplays, so "make one like Idle time" borrows that story's shape and tone and writes new jokes.
 - **Start production**: the story's **director** takes over. It's one Claude Opus session (medium effort) that keeps
   its context for the whole story. It works in `~/ai/clips/short-stories/<slug>/` with the clips tools and GPUs, and
   posts every cut, still and note to the story's page.
@@ -27,6 +29,10 @@ A story moves through stages:
 - **Redo or skip**: a stage's `⋯` menu in the left rail ("Redo from here…", "Skip ahead to here…"), confirmed first.
   Clicking a stage only scrolls the thread to it.
 - Voices approved at casting go into the **voice catalog** (Voices in the sidebar), which later stories cast from.
+- **Character looks come first in Animatic.** The director finds each on-screen character in the **character
+  catalog** (Characters in the sidebar) or an earlier story, or designs a new profile, and checks each one fits this
+  story. It posts the model sheets and stops for "Approve the character looks" before making any stills. That approval
+  only lets it carry on with Animatic, and new profiles go into the catalog.
 
 Plain reviews (news segments, long-video clips) still work as they did on Video Review: Reviews in the sidebar, or
 `~/ai/clips/tools/review_site.py`.
@@ -72,7 +78,7 @@ tailscale funnel --https=10000 off                          # stop public access
 | `media`     | 5191 | Cuts (chunked uploads, range playback, thumbnails), images and voice samples, stored in `data/` |
 | `gate`      | 5192 | Password gate in front of the app for public visitors |
 | `stt`       | 5193 | Whisper `small.en` (CPU) for dictation |
-| `assistant` |      | The script assistant (`worker/script-assistant.ts`, Claude Fable) |
+| `assistant` |      | The script assistant (`worker/script-assistant.ts`, Claude Fable or Muse) |
 | `director`  |      | The production AI (`worker/director.ts`, Claude Opus) |
 
 ## How the director works
@@ -82,8 +88,10 @@ tailscale funnel --https=10000 off                          # stop public access
   per story (up to four stories at once), resuming the story's Agent SDK session each time.
 - **Its tools.** Every Claude Code tool, with permissions bypassed (nobody is at a terminal), plus the app tools in
   `worker/studio-tools.ts`: `post_cut`, `post_image`, `write_note`, `reply_to_comment`, `resolve_comment`,
-  `request_review`, `ask_user`, `start_job`, `wake_me_in`, `list_voices`, `add_voice`, `read_script`, `edit_script`
-  and more. It loads Greg's global Claude settings (GPU rules, browser leases).
+  `request_review`, `ask_user`, `start_job`, `wake_me_in`, `list_voices`, `add_voice`, `list_characters`,
+  `add_character`, `read_script`, `edit_script`, `list_stories`, `read_story` and more. `list_stories` and
+  `read_story` are also on the script assistant. They return the screenplay (from the app, or from `00-script/`
+  for a story that was never imported) and nothing else. It loads Greg's global Claude settings (GPU rules, browser leases).
 - **Its instructions** are `worker/director-prompt.md` plus `worker/writing-style.md`, re-read every turn. Each
   stage's goal is in `shared/stages.ts`.
 - **Long jobs** (TTS batches, H3 renders) go through `start_job`. B70 work (`gpu: "b70"`, or any command that calls
@@ -98,7 +106,9 @@ tailscale funnel --https=10000 off                          # stop public access
   a story's first turn too. After three cut-offs in a row it stops and asks instead. Background jobs aren't affected.
 - **Requests** (`requests`, `convex/requests.ts`): each `request_review` or `ask_user` call is a card in the thread.
   It shows the cuts and images the director posted since its last request (or the ones it names), and is `open`
-  until someone approves, says "Not good" (`changes`), answers, or a newer request replaces it. Every cut and image
+  until someone approves, says "Not good" (`changes`), answers, or a newer request replaces it. A review with a `step`
+  ("the character looks") approves one step inside the stage: Approve queues a `step` turn telling the director to
+  carry on, and the story stays on its stage. Every cut and image
   the director posts records its turn, so the thread shows it there too. `stories.get` returns the open one for the
   decision bar.
 - **Where the story stands** (`stories.state`): `writing` (script stage), `working` (the director is on it),
@@ -120,17 +130,18 @@ tailscale funnel --https=10000 off                          # stop public access
   browser has to turn notifications on again.
 
 Settings (`.env.local` or the environment): `DIRECTOR_MODEL` (default `claude-opus-5-5`), `DIRECTOR_EFFORT`
-(`medium`), `DIRECTOR_CONCURRENCY` (4), `AI_MODEL` for the script assistant (`claude-fable-5-1`), `STORIES_DIR`
+(`medium`), `DIRECTOR_CONCURRENCY` (4), `AI_MODEL` for the script assistant's Claude (`claude-fable-5-2`),
+`MUSE_MODEL` to override Muse, `STORIES_DIR`
 (`~/ai/clips/short-stories`), `MEDIA_DIR` (`./data`), `APP_URL` (the address used in links the director writes).
 
 ## Layout
 
 ```
 convex/        backend: documents and their history, the script assistant's queue, stories, turns,
-               feedback, wakeups, voices, videos/versions/comments/notes/images (review)
+               feedback, wakeups, voices, characters, videos/versions/comments/notes/images (review)
 shared/        editor schema + Markdown, stages, director settings
 src/           React app: components/ (shell, sidebar, home, documents, reviews), story/ (story page: stage
-               rail, thread, decision bar), voices/, player/, notes/, images/, panels/ (script assistant, chat, history)
+               rail, thread, decision bar), voices/, characters/, player/, notes/, images/, panels/ (script assistant, chat, history)
 worker/        script-assistant.ts, director.ts, studio-tools.ts, jobs.ts, media.ts, prompts
 media/         media server
 gate/          password gate

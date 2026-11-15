@@ -33,12 +33,14 @@ import { chatPreview } from "../../shared/chat";
 import { AiPanel } from "../panels/AiPanel";
 import { ChatPanel, useChatUnread, type ChatMessage } from "../panels/ChatPanel";
 import { HistoryPanel } from "../panels/HistoryPanel";
-import { Avatar, ClaudeAvatar } from "./Avatar";
+import { agentInfo } from "../../shared/agents";
+import { AgentAvatar, Avatar } from "./Avatar";
 import { CategoryPicker } from "./CategoryPicker";
 import { useShell } from "./Shell";
 import { useToast } from "./Toast";
 import { takeJustCreated } from "./useCreateDoc";
 import { NewStoryDialog } from "../story/stageUi";
+import { BottomSheet } from "./BottomSheet";
 
 const ONLINE_MS = 30_000;
 const PANEL_KEY = "dystory.panel";
@@ -82,7 +84,9 @@ function DocView({ doc, embedded }: { doc: DocInfo; embedded?: boolean }) {
   const [, navigate] = useLocation();
   const { sidebarOpen, toggleSidebar } = useShell();
   const wide = useMediaQuery("(min-width: 1280px)");
-  const [panel, setPanelState] = useState<Panel>(storedPanel);
+  const phone = useMediaQuery("(max-width: 767px)");
+  // On a phone a panel covers the script, so it doesn't come back by itself.
+  const [panel, setPanelState] = useState<Panel>(() => (phone ? null : storedPanel()));
   const [editor, setEditor] = useState<Editor | null>(null);
   const [aiFocus, setAiFocus] = useState(0);
   const [chatFocus, setChatFocus] = useState(0);
@@ -299,7 +303,7 @@ function DocView({ doc, embedded }: { doc: DocInfo; embedded?: boolean }) {
           <SaveState editor={editor} />
 
           <div className="mr-1 flex items-center -space-x-1.5">
-            {running && <ClaudeAvatar size={28} ring />}
+            {running && <AgentAvatar agent={running.agent} size={28} ring />}
             {people.map((p) => (
               <Avatar key={p.userId} name={p.name} color={p.color} size={28} ring title={`${p.name} is here`} />
             ))}
@@ -395,7 +399,7 @@ function DocView({ doc, embedded }: { doc: DocInfo; embedded?: boolean }) {
             <div className="pointer-events-none sticky top-3 z-10 -mb-9 flex h-9 justify-center">
               <div className="flex items-center gap-2 rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm shadow-float">
                 <Sparkles size={14} className="sparkle-spin text-ai" />
-                <span className="font-medium text-ai">Claude is working on the document…</span>
+                <span className="font-medium text-ai">{agentInfo(running?.agent).name} is working on the document…</span>
               </div>
             </div>
           )}
@@ -443,6 +447,22 @@ function DocView({ doc, embedded }: { doc: DocInfo; embedded?: boolean }) {
               onClose={() => setPanel(null)}
             />
           </aside>
+        ) : phone ? (
+          <BottomSheet onClose={() => setPanel(null)}>
+            {(close) => (
+              <PanelBody
+                panel={panel}
+                docId={docId}
+                doc={doc}
+                editor={editor}
+                requests={requests}
+                aiFocus={aiFocus}
+                chat={chat}
+                overlay
+                onClose={close}
+              />
+            )}
+          </BottomSheet>
         ) : (
           <>
             <div className="fade-in fixed inset-0 z-40 bg-black/25" onClick={() => setPanel(null)} />
@@ -509,7 +529,7 @@ function useClaudeActivity({
       const who = users?.find((u) => u._id === r.requestedBy)?.name ?? "Someone";
       const prompt = r.prompt.length > 60 ? `${r.prompt.slice(0, 60)}…` : r.prompt;
       toast(
-        { message: `${who} asked Claude: “${prompt}”`, action: { label: "Open", run: onOpen } },
+        { message: `${who} asked ${agentInfo(r.agent).name}: “${prompt}”`, action: { label: "Open", run: onOpen } },
         8000,
       );
     }

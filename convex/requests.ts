@@ -58,6 +58,8 @@ export async function openRequest(
   kind: Request["kind"],
   message: string,
   show: { cuts?: number[]; images?: string[] } = {},
+  /** A review of one step inside the stage, not the whole stage. */
+  step?: string,
 ) {
   const since = await roundStart(ctx, story);
   const versions = await ctx.db
@@ -90,6 +92,7 @@ export async function openRequest(
     turnId,
     kind,
     message,
+    step,
     versionIds,
     imageIds,
     status: "open",

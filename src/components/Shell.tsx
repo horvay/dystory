@@ -15,6 +15,7 @@ import { StoryPage } from "../story/StoryPage";
 import { ToastProvider } from "./Toast";
 import { UploadsProvider } from "./Uploads";
 import { VideoPage } from "./VideoPage";
+import { CharactersPage } from "../characters/CharactersPage";
 import { VoicesPage } from "../voices/VoicesPage";
 
 type ShellCtx = { sidebarOpen: boolean; toggleSidebar: () => void; isWide: boolean; onSwitchUser: () => void };
@@ -93,6 +94,9 @@ export function Shell({ onSwitchUser }: { onSwitchUser: () => void }) {
                 </Route>
                 <Route path="/voices">
                   <VoicesPage />
+                </Route>
+                <Route path="/characters">
+                  <CharactersPage />
                 </Route>
                 <Route>
                   <Home />

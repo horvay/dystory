@@ -400,6 +400,46 @@ describe("the thread and its requests", () => {
     expect((await story()).stage).toBe("casting");
   });
 
+  test("approving a step carries on with the same stage", async () => {
+    const { t, userId, storyId, claimNext, finish, story } = await setup();
+    await t.mutation(api.stories.setStage, { storyId, userId, stage: "animatic" });
+    const job = await claimNext();
+    const sheet = await t.mutation(api.director.addImage, { turnId: job.turnId, caption: "Gary, from the catalog", ...img(1) });
+    await t.mutation(api.director.requestReview, {
+      turnId: job.turnId,
+      message: "Gary and the toaster for this story",
+      step: "the character looks",
+    });
+    await finish(job.turnId);
+    expect((await story()).openRequest).toMatchObject({ kind: "review", step: "the character looks" });
+    await t.mutation(api.feedback.addNote, { userId, text: "Gary's shirt should be blue", imageIds: [sheet] });
+    const approvalsBefore = await t.query(api.requests.approvals, { storyId });
+
+    await t.mutation(api.stories.approve, { storyId, userId, note: "Love the toaster" });
+    const s = await story();
+    expect(s.stage).toBe("animatic");
+    expect(s.state).toBe("working");
+    const thread = (await t.query(api.requests.thread, { storyId }))!;
+    expect(thread.requests[0]!.status).toBe("approved");
+    const turn = thread.turns.at(-1)!;
+    expect(turn.kind).toBe("step");
+    expect(turn.stage).toBe("animatic");
+    expect(turn.display).toBe("The character looks approved: Love the toaster");
+    expect(turn.prompt).toContain("Carry on with Animatic");
+    expect(turn.prompt).toContain("Love the toaster");
+    expect(turn.prompt).toContain("Gary's shirt should be blue");
+    expect(turn.prompt).toContain("add_character");
+    expect(await t.query(api.requests.approvals, { storyId })).toEqual(approvalsBefore);
+
+    // The stage's own review, without a step, moves on as before.
+    const next = await claimNext();
+    await t.mutation(api.director.addVersion, { turnId: next.turnId, summary: "Animatic", ...file });
+    await t.mutation(api.director.requestReview, { turnId: next.turnId, message: "The animatic" });
+    await finish(next.turnId);
+    await t.mutation(api.stories.approve, { storyId, userId });
+    expect((await story()).stage).toBe("animation");
+  });
+
   test("a question is answered by the next message", async () => {
     const { t, userId, storyId, claimNext, finish, story } = await setup();
     await t.mutation(api.stories.approve, { storyId, userId });
@@ -436,5 +476,18 @@ describe("messages and waiting notes", () => {
     // The timer finds nothing left to send.
     await t.mutation(api.feedback.sendNow, { storyId });
     expect((await t.query(api.turns.list, { storyId })).at(-1)!._id).toBe(turn._id);
+  });
+});
+
+describe("reading another story's screenplay", () => {
+  test("scriptBySlug returns the live script and hides a trashed story", async () => {
+    const { t, storyId, story } = await setup();
+    const s = await story();
+    const found = await t.mutation(api.stories.scriptBySlug, { slug: s.slug });
+    expect(found).toMatchObject({ title: "Toaster Overlord", slug: "toaster-overlord", stage: "script" });
+    expect(typeof found!.markdown).toBe("string");
+    expect(await t.mutation(api.stories.scriptBySlug, { slug: "no-such-story" })).toBeNull();
+    await t.mutation(api.stories.setTrashed, { storyId, trashed: true });
+    expect(await t.mutation(api.stories.scriptBySlug, { slug: "toaster-overlord" })).toBeNull();
   });
 });

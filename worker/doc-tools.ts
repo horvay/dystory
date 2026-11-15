@@ -7,6 +7,7 @@ import { ConvexError } from "convex/values";
 import { z } from "zod";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { describeStories, readStoryScript } from "./story-catalog";
 
 export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -24,7 +25,7 @@ async function run(fn: () => Promise<string>): Promise<ToolResult> {
   }
 }
 
-type Ctx = { convex: ConvexClient; requestId: Id<"aiRequests"> };
+type Ctx = { convex: ConvexClient; requestId: Id<"aiRequests">; docId: Id<"docs"> };
 
 function docTool<Shape extends z.ZodRawShape>(
   name: string,
@@ -86,6 +87,18 @@ export const DOC_TOOLS = [
       return "Title updated.";
     },
   ),
+  docTool(
+    "list_stories",
+    "The other stories and the opening of each screenplay. Call this when someone names another story, including by what happens in it (\"the vacuum one\") rather than its title. Then call read_story. Skip it for an ordinary edit.",
+    {},
+    async ({ convex, docId }) => describeStories(convex, { docId }),
+  ),
+  docTool(
+    "read_story",
+    "Read one other story's screenplay, by a title or folder name from list_stories. Read-only. Borrow how it is built and its tone, and write new jokes. It does not include that story's look, cast or voices.",
+    { name: z.string().describe("Title or folder name from list_stories, such as \"Idle time\" or idle-time") },
+    async ({ convex, docId }, { name }) => readStoryScript(convex, name, { showFolder: false, current: { docId } }),
+  ),
 ];
 
 /** The activity line shown in the panel for a tool call (Claude's and Muse's tool names). */
@@ -101,6 +114,10 @@ export function toolLabel(name: string, input: Record<string, unknown>): string 
       return "Rewrote the document";
     case "mcp__doc__set_title":
       return `Set the title to “${String(input.title ?? "")}”`;
+    case "mcp__doc__list_stories":
+      return "Looked through the other stories";
+    case "mcp__doc__read_story":
+      return `Read “${String(input.name ?? "a story")}”`;
     case "WebSearch":
     case "web_search":
       return `Searched the web: ${String(input.query ?? "")}`;

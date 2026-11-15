@@ -1,13 +1,16 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { ReplaceStep, type Transform } from "@tiptap/pm/transform";
+import { agentInfo } from "../shared/agents";
 import { getDocSchema, markdownTransform, toMarkdown } from "../shared/markdown";
 import { prosemirrorSync } from "./sync";
 import { takeSnapshot } from "./snapshots";
-import { aiComedyStyle, aiEffort } from "./schema";
+import { aiAgent, aiComedyStyle, aiEffort } from "./schema";
 
 const AI_CLIENT_ID = "claude";
+// How many of the other model's replies a switched-to model is shown.
+const CATCH_UP_LIMIT = 8;
 
 // ---------------------------------------------------------------------------
 // Browser-facing
@@ -19,10 +22,11 @@ export const ask = mutation({
     userId: v.id("users"),
     prompt: v.string(),
     selection: v.optional(v.string()),
+    agent: v.optional(aiAgent),
     effort: v.optional(aiEffort),
     comedyStyle: v.optional(aiComedyStyle),
   },
-  handler: async (ctx, { docId, userId, prompt, selection, effort, comedyStyle }) => {
+  handler: async (ctx, { docId, userId, prompt, selection, agent, effort, comedyStyle }) => {
     const doc = await ctx.db.get(docId);
     if (!doc) throw new Error("Document not found");
     return ctx.db.insert("aiRequests", {
@@ -30,6 +34,7 @@ export const ask = mutation({
       prompt: prompt.trim(),
       selection: selection?.trim() || undefined,
       requestedBy: userId,
+      agent,
       effort,
       comedyStyle,
       status: "queued",
@@ -55,6 +60,7 @@ export const newConversation = mutation({
   handler: async (ctx, { docId }) => {
     await ctx.db.patch(docId, {
       aiSessionId: undefined,
+      museSessionId: undefined,
       conversationStartedAt: Date.now(),
     });
   },
@@ -155,8 +161,10 @@ export const claim = mutation({
     });
     const requester = await ctx.db.get(req.requestedBy);
     const { doc: node } = await prosemirrorSync.getDoc(ctx, req.docId, getDocSchema());
+    const agent = req.agent ?? "claude";
     return {
       docId: req.docId,
+      agent,
       prompt: req.prompt,
       selection: req.selection,
       effort: req.effort ?? "medium",
@@ -165,11 +173,43 @@ export const claim = mutation({
       title: doc.title,
       markdown: toMarkdown(node.toJSON()),
       // The worker runs one request per document at a time, so this is the
-      // session left by the previous request (cleared by "New conversation").
-      sessionId: doc.aiSessionId,
+      // session this model left last time (cleared by "New conversation").
+      sessionId: agent === "muse" ? doc.museSessionId : doc.aiSessionId,
+      catchUp: await catchUp(ctx, req),
     };
   },
 });
+
+/**
+ * What the other model said in this conversation since this one last
+ * answered, so switching models mid-chat doesn't drop the thread.
+ */
+async function catchUp(ctx: MutationCtx, req: Doc<"aiRequests">) {
+  const doc = await ctx.db.get(req.docId);
+  const agent = req.agent ?? "claude";
+  const earlier = (
+    await ctx.db
+      .query("aiRequests")
+      .withIndex("by_doc", (q) => q.eq("docId", req.docId))
+      .collect()
+  ).filter(
+    (r) =>
+      r._id !== req._id &&
+      r._creationTime < req._creationTime &&
+      r._creationTime >= (doc?.conversationStartedAt ?? 0) &&
+      r.status === "done",
+  );
+  const lastOwn = earlier.findLastIndex((r) => (r.agent ?? "claude") === agent);
+  const missed = earlier.slice(lastOwn + 1).slice(-CATCH_UP_LIMIT);
+  return Promise.all(
+    missed.map(async (r) => ({
+      requesterName: (await ctx.db.get(r.requestedBy))?.name ?? "Someone",
+      agentName: agentInfo(r.agent).name,
+      prompt: r.prompt,
+      response: r.response,
+    })),
+  );
+}
 
 async function runningRequest(ctx: MutationCtx, requestId: Id<"aiRequests">) {
   const req = await ctx.db.get(requestId);
@@ -344,7 +384,10 @@ export const finish = mutation({
       finishedAt: Date.now(),
     });
     if (sessionId && !cancelled) {
-      await ctx.db.patch(req.docId, { aiSessionId: sessionId });
+      await ctx.db.patch(
+        req.docId,
+        req.agent === "muse" ? { museSessionId: sessionId } : { aiSessionId: sessionId },
+      );
     }
     if (req.editCount === 0 && req.beforeVersionId) {
       // Claude only answered; the "before" snapshot just holds people's edits.

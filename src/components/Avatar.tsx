@@ -1,4 +1,5 @@
-import { Clapperboard, Sparkles } from "lucide-react";
+import { Clapperboard, Infinity as InfinityIcon, Sparkles } from "lucide-react";
+import type { AiAgent } from "../../shared/agents";
 import { cn } from "../lib/hooks";
 
 export function Avatar({
@@ -44,6 +45,26 @@ export function ClaudeAvatar({ size = 28, ring }: { size?: number; ring?: boolea
       <Sparkles size={size * 0.55} strokeWidth={2.2} />
     </span>
   );
+}
+
+export function MuseAvatar({ size = 28, ring }: { size?: number; ring?: boolean }) {
+  return (
+    <span
+      title="Muse"
+      className={cn(
+        "inline-grid shrink-0 place-items-center rounded-full bg-[#0866ff] text-white",
+        ring && "ring-2 ring-bg",
+      )}
+      style={{ width: size, height: size }}
+    >
+      <InfinityIcon size={size * 0.6} strokeWidth={2.4} />
+    </span>
+  );
+}
+
+/** Whichever model answered a script-assistant request. Older requests are Claude. */
+export function AgentAvatar({ agent, ...props }: { agent?: AiAgent; size?: number; ring?: boolean }) {
+  return agent === "muse" ? <MuseAvatar {...props} /> : <ClaudeAvatar {...props} />;
 }
 
 /** The production AI's avatar: the director of a story. */

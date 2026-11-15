@@ -45,7 +45,7 @@ export const get = query({
       trashed: doc.trashed,
       updatedAt: doc.updatedAt,
       createdBy: doc.createdBy,
-      hasAiConversation: !!doc.aiSessionId,
+      hasAiConversation: !!(doc.aiSessionId || doc.museSessionId),
       conversationStartedAt: doc.conversationStartedAt ?? 0,
     };
   },

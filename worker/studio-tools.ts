@@ -10,6 +10,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import { errorText, type ToolResult } from "./doc-tools";
 import { b70Kind, startJob, usesB70 } from "./jobs";
 import { uploadAudio, uploadImage, uploadVideo } from "./media";
+import { describeStories, readStoryScript } from "./story-catalog";
 
 export type StudioCtx = {
   convex: ConvexClient;
@@ -153,9 +154,15 @@ export const STUDIO_TOOLS = [
       message: z.string().describe("One line: what's ready and what to decide"),
       cuts: z.array(z.number()).optional().describe("Show these cut numbers instead of what was posted since the last request"),
       images: z.array(z.string()).optional().describe("Show these image ids (from post_image) instead"),
+      step: z
+        .string()
+        .optional()
+        .describe(
+          "Only for a review of one step inside the stage, named as it reads after \"Approve\" (\"the character looks\"). Approving it lets you carry on with the stage; without it, Approve moves the story to the next stage.",
+        ),
     },
-    async (ctx, { message, cuts, images }) => {
-      await ctx.convex.mutation(api.director.requestReview, { turnId: ctx.turnId, message, cuts, images });
+    async (ctx, { message, cuts, images, step }) => {
+      await ctx.convex.mutation(api.director.requestReview, { turnId: ctx.turnId, message, cuts, images, step });
       return "The story is waiting for review. End your turn now.";
     },
   ),
@@ -251,6 +258,62 @@ export const STUDIO_TOOLS = [
       return `Added "${voice.name}" to the voice catalog.`;
     },
   ),
+  studioTool(
+    "list_characters",
+    "The character catalog: character profiles approved in earlier stories, each with its identity text, art style, model sheet path and how it was made. Check it before designing a character.",
+    {},
+    async (ctx) => {
+      const characters = await ctx.convex.query(api.characters.list, {});
+      if (!characters.length) return "The catalog is empty.";
+      return json(
+        characters.map((c) => ({
+          name: c.name,
+          description: c.description,
+          style: c.style,
+          sheetPath: c.sheetPath,
+          notes: c.notes,
+          fromStory: c.storyTitle,
+        })),
+      );
+    },
+  ),
+  studioTool(
+    "add_character",
+    "Add an approved character profile to the character catalog so later stories can reuse it. Only after people approved the character looks.",
+    {
+      name: z.string().describe("A name to find it by, e.g. \"Gary (1950s PSA cartoon)\""),
+      description: z.string().describe("The identity text used in every still prompt: age, face, hair, build, wardrobe, props"),
+      style: z.string().optional().describe("The art style the model sheet is drawn in"),
+      sheetPath: z.string().describe("The model sheet image (kept where it is; use a stable path in the story folder)"),
+      notes: z.string().optional().describe("How it was made and how to use it: prompt, model, seed, quirks"),
+    },
+    async (ctx, character) => {
+      const sheet = existing(ctx, character.sheetPath);
+      const img = await uploadImage(sheet);
+      await ctx.convex.mutation(api.director.addCharacter, {
+        turnId: ctx.turnId,
+        ...character,
+        sheetPath: sheet,
+        file: img.file,
+        thumb: img.thumb,
+        width: img.width,
+        height: img.height,
+      });
+      return `Added "${character.name}" to the character catalog.`;
+    },
+  ),
+  studioTool(
+    "list_stories",
+    "The other stories and the opening of each screenplay, including stories that only exist as a folder. Call this when someone wants the writing to feel like another story, then read_story. This is the screenplay, not the pipeline scripts in those folders.",
+    {},
+    async (ctx) => describeStories(ctx.convex, { slug: ctx.slug }),
+  ),
+  studioTool(
+    "read_story",
+    "Read one other story's screenplay, by a title or folder name from list_stories. Read-only. Borrow how it is built and its tone, and write new jokes. It does not include that story's look, cast or voices. The folder path is there for when someone asks you to open the folder.",
+    { name: z.string().describe("Title or folder name from list_stories, such as \"Idle time\" or idle-time") },
+    async (ctx, { name }) => readStoryScript(ctx.convex, name, { showFolder: true, current: { slug: ctx.slug } }),
+  ),
 ];
 
 export const STUDIO_TOOL_NAMES = STUDIO_TOOLS.map((t) => `mcp__studio__${t.name}`);
@@ -293,6 +356,14 @@ export function studioLabel(name: string, input: Record<string, unknown>): strin
       return "Checked the voice catalog";
     case "mcp__studio__add_voice":
       return `Added “${s("name")}” to the voice catalog`;
+    case "mcp__studio__list_characters":
+      return "Checked the character catalog";
+    case "mcp__studio__add_character":
+      return `Added “${s("name")}” to the character catalog`;
+    case "mcp__studio__list_stories":
+      return "Looked through the other stories";
+    case "mcp__studio__read_story":
+      return `Read “${s("name")}”`;
     default:
       return null;
   }

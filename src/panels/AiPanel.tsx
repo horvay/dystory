@@ -15,8 +15,9 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { AI_AGENTS, agentInfo, type AiAgent } from "../../shared/agents";
 import { COMEDY_STYLES, type ComedyStyle } from "../../shared/comedy";
-import { Avatar, ClaudeAvatar } from "../components/Avatar";
+import { AgentAvatar, Avatar } from "../components/Avatar";
 import { MicButton } from "../components/MicButton";
 import { Popover } from "../components/Popover";
 import { renderChatMarkdown } from "../lib/chatMarkdown";
@@ -45,6 +46,19 @@ const EFFORT_HINTS: Record<Effort, string> = {
   high: "Slower, but thinks harder about bigger changes",
 };
 const EFFORT_KEY = "dystory.effort";
+const AGENT_KEY = "dystory.agent";
+
+/** The model picked under the chat box, remembered in this browser. */
+function useAgent() {
+  const [agent, setAgent] = useState<AiAgent>(() => {
+    const saved = localStorage.getItem(AGENT_KEY);
+    return AI_AGENTS.find((a) => a.id === saved)?.id ?? "claude";
+  });
+  useEffect(() => {
+    localStorage.setItem(AGENT_KEY, agent);
+  }, [agent]);
+  return [agent, setAgent] as const;
+}
 
 /** The effort slider's position, remembered in this browser. */
 function useEffort() {
@@ -119,7 +133,8 @@ export function AiPanel({
   const [confirmUndo, setConfirmUndo] = useState<Id<"aiRequests"> | null>(null);
   const [ignoreSelection, setIgnoreSelection] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
-  const agentName = "Claude";
+  const [agent, setAgent] = useAgent();
+  const agentName = agentInfo(agent).name;
   const [effort, setEffort] = useEffort();
   const [comedyStyle, setComedyStyle] = useComedyStyle(docId);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -207,6 +222,7 @@ export function AiPanel({
       userId: me._id,
       prompt: p,
       selection: sel,
+      agent,
       effort,
       comedyStyle: comedyStyle ?? undefined,
     });
@@ -292,7 +308,7 @@ export function AiPanel({
               </div>
 
               <div className="flex gap-2.5">
-                <ClaudeAvatar size={26} />
+                <AgentAvatar agent={r.agent} size={26} />
                 <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-bg px-3.5 py-2.5">
                   {r.activity.length > 0 && (
                     <ul className="mb-2 space-y-1">
@@ -344,7 +360,7 @@ export function AiPanel({
                         onClick={() => setConfirmUndo(r._id)}
                         className="-ml-1.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-muted hover:bg-surface-2 hover:text-ink"
                       >
-                        <RotateCcw size={13} /> Undo Claude's changes
+                        <RotateCcw size={13} /> Undo {agentInfo(r.agent).name}'s changes
                       </button>
                     )}
                   </div>
@@ -431,6 +447,7 @@ export function AiPanel({
             </button>
           </div>
         </div>
+        <AgentPicker value={agent} onChange={setAgent} />
         <label className="mt-1.5 flex items-center gap-3 px-1 text-xs text-muted" title={EFFORT_HINTS[effort]}>
           <span className="w-12 shrink-0">Effort</span>
           <input
@@ -446,6 +463,32 @@ export function AiPanel({
           <span className="w-14 shrink-0 text-right font-medium text-ink-2 capitalize">{effort}</span>
         </label>
         <ComedyPicker value={comedyStyle} onChange={setComedyStyle} />
+      </div>
+    </div>
+  );
+}
+
+/** Which model answers your messages, as a two-way switch under the chat box. */
+function AgentPicker({ value, onChange }: { value: AiAgent; onChange: (agent: AiAgent) => void }) {
+  return (
+    <div className="mt-2 flex items-center gap-3 px-1 text-xs text-muted">
+      <span className="w-12 shrink-0">Model</span>
+      <div role="radiogroup" aria-label="Model" className="flex rounded-lg bg-surface-2 p-0.5">
+        {AI_AGENTS.map((a) => (
+          <button
+            key={a.id}
+            role="radio"
+            aria-checked={a.id === value}
+            onClick={() => onChange(a.id)}
+            title={a.hint}
+            className={cn(
+              "h-6 rounded-md px-2.5 transition",
+              a.id === value ? "bg-bg font-medium text-ink shadow-sm" : "hover:text-ink-2",
+            )}
+          >
+            {a.label}
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -295,11 +295,13 @@ export const requestReview = mutation({
     // What to show; by default everything posted since the last request.
     cuts: v.optional(v.array(v.number())),
     images: v.optional(v.array(v.string())),
+    // Set for a review of one step inside the stage ("the character looks").
+    step: v.optional(v.string()),
   },
-  handler: async (ctx, { turnId, message, cuts, images }) => {
+  handler: async (ctx, { turnId, message, cuts, images, step }) => {
     const { story } = await runningTurn(ctx, turnId);
     const line = clean(message, 300) || `${stageInfo(story.stage).label} is ready for review`;
-    await openRequest(ctx, story, turnId, "review", line, { cuts, images });
+    await openRequest(ctx, story, turnId, "review", line, { cuts, images }, step ? clean(step, 80) : undefined);
     await ctx.db.patch(story._id, {
       state: "review",
       stateSet: true,
@@ -703,6 +705,37 @@ export const addVoice = mutation({
       ...voice,
       name: clean(voice.name, 80),
       description: clean(voice.description, 2000),
+      storyId: story._id,
+      createdBy: await directorUser(ctx),
+      trashed: false,
+    });
+  },
+});
+
+// ---------------------------------------------------------------------------
+// The character catalog
+// ---------------------------------------------------------------------------
+
+export const addCharacter = mutation({
+  args: {
+    turnId: v.id("turns"),
+    name: v.string(),
+    description: v.string(),
+    style: v.optional(v.string()),
+    sheetPath: v.string(),
+    notes: v.optional(v.string()),
+    file: v.string(),
+    thumb: v.string(),
+    width: v.number(),
+    height: v.number(),
+  },
+  handler: async (ctx, { turnId, ...character }) => {
+    const { story } = await runningTurn(ctx, turnId);
+    return ctx.db.insert("characters", {
+      ...character,
+      name: clean(character.name, 80),
+      description: clean(character.description, 3000),
+      style: character.style ? clean(character.style, 300) : undefined,
       storyId: story._id,
       createdBy: await directorUser(ctx),
       trashed: false,
