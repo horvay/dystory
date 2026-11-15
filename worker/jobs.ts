@@ -39,8 +39,17 @@ async function b70q(method: string, path: string, body?: unknown) {
 
 const ENV_KEYS = ["PATH", "HOME", "LANG", "USER", "XDG_RUNTIME_DIR"];
 
+/**
+ * make_real's render scripts (./dr drive, ./dr retake) submit their own B70
+ * jobs, one short job at a time. Put in the queue themselves they would hold
+ * the card while waiting on their own jobs behind them, so they never are.
+ */
+export const queuesItself = (command: string) =>
+  /(^|[\s;&|(/])dr\s+(drive|retake)\b|depth-route\/(drive|retake)\.sh|submit-units\.ts/.test(command);
+
 /** Whether a command needs the B70: asked for, or it takes the lease itself. */
-export const usesB70 = (command: string, gpu?: string) => gpu === "b70" || /\bb70-lease\b|\bb70q\b/.test(command);
+export const usesB70 = (command: string, gpu?: string) =>
+  !queuesItself(command) && (gpu === "b70" || /\bb70-lease\b|\bb70q\b/.test(command));
 
 /** The kind part of a B70 job's owner name, so b70q learns each kind's time and memory separately. */
 export function b70Kind(command: string) {

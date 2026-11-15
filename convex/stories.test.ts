@@ -491,3 +491,139 @@ describe("reading another story's screenplay", () => {
     expect(await t.mutation(api.stories.scriptBySlug, { slug: "toaster-overlord" })).toBeNull();
   });
 });
+
+describe("remakes", () => {
+  const LINK = "https://www.youtube.com/watch?v=abc123";
+
+  async function remake(args: { title?: string; adopt?: string } = {}) {
+    const base = await setup();
+    const storyId = await base.t.mutation(api.stories.createRemake, {
+      userId: base.userId,
+      title: args.title ?? "Truly Outrageous",
+      adopt: args.adopt,
+    });
+    const story = async () => (await base.t.query(api.stories.get, { storyId }))!;
+    return { ...base, storyId, story };
+  }
+
+  test("a new remake starts on its source, with no script and its own folder name", async () => {
+    const { story } = await remake();
+    const s = await story();
+    expect(s.kind).toBe("remake");
+    expect(s.stage).toBe("source");
+    expect(s.state).toBe("writing");
+    expect(s.docId).toBeUndefined();
+    expect(s.slug).toBe("truly-outrageous");
+  });
+
+  test("it can't start until it has something to remake", async () => {
+    const { t, userId, storyId, story } = await remake();
+    await expect(t.mutation(api.stories.approve, { storyId, userId })).rejects.toThrow(/Say what to remake/);
+    expect((await story()).stage).toBe("source");
+    await expect(
+      t.mutation(api.stories.setSource, { storyId, source: { url: "not a link", notes: "" } }),
+    ).rejects.toThrow(/link/);
+  });
+
+  test("starting it moves to Breakdown and tells the director the source and the notes", async () => {
+    const { t, userId, storyId, story, claimNext } = await remake();
+    await t.mutation(api.stories.setSource, { storyId, source: { url: LINK, notes: "Aja never sings" } });
+    expect((await story()).snippet).toContain(LINK);
+    await t.mutation(api.stories.approve, { storyId, userId });
+    const s = await story();
+    expect(s.stage).toBe("breakdown");
+    expect(s.state).toBe("working");
+    const [turn] = await t.query(api.turns.list, { storyId });
+    expect(turn!.display).toBe("Remake started");
+    expect(turn!.prompt).toContain("started the remake");
+    expect(turn!.prompt).toContain(LINK);
+    expect(turn!.prompt).toContain("Aja never sings");
+    expect(turn!.prompt).toContain("Goal for Breakdown");
+    // The worker learns what kind of story it is, so it picks the remake workspace.
+    const job = await claimNext();
+    expect(job.story.kind).toBe("remake");
+    expect(job.story.source?.url).toBe(LINK);
+  });
+
+  test("the source is fixed once the remake has started", async () => {
+    const { t, userId, storyId } = await remake();
+    await t.mutation(api.stories.setSource, { storyId, source: { url: LINK, notes: "" } });
+    await t.mutation(api.stories.approve, { storyId, userId });
+    await expect(
+      t.mutation(api.stories.setSource, { storyId, source: { url: `${LINK}x`, notes: "" } }),
+    ).rejects.toThrow(/already started/);
+  });
+
+  test("approvals walk the remake's own stages: cast, stills, then the render", async () => {
+    const { t, userId, storyId, story } = await remake();
+    await t.mutation(api.stories.setSource, { storyId, source: { url: LINK, notes: "" } });
+    const seen = [];
+    for (let i = 0; i < 8; i++) {
+      await t.mutation(api.stories.approve, { storyId, userId });
+      seen.push((await story()).stage);
+    }
+    expect(seen).toEqual(["breakdown", "stills", "render", "final", "packaging", "upload", "short", "done"]);
+    const turns = await t.query(api.turns.list, { storyId });
+    const kickoff = (label: string) => turns.find((x) => x.prompt.includes(`Goal for ${label}`))!.prompt;
+    expect(kickoff("Stills")).toContain("approved Breakdown");
+    expect(kickoff("Render")).toContain("./dr drive");
+    // Final cut shares its id with a story's stage and has a goal of its own.
+    expect(kickoff("Final cut")).toContain("./dr assemble");
+    const approvals = await t.query(api.requests.approvals, { storyId });
+    // The stage rail shows who started it and who approved each stage. "Done" queues no turn, so Short has none.
+    expect(Object.keys(approvals).sort()).toEqual(["breakdown", "final", "packaging", "render", "source", "stills", "upload"]);
+  });
+
+  test("a remake can't be moved to a stage only stories have", async () => {
+    const { t, userId, storyId } = await remake();
+    await expect(t.mutation(api.stories.setStage, { storyId, userId, stage: "casting" })).rejects.toThrow(/isn't a stage/);
+  });
+
+  test("going back to the source stops everything", async () => {
+    const { t, userId, storyId, story } = await remake();
+    await t.mutation(api.stories.setSource, { storyId, source: { url: LINK, notes: "" } });
+    await t.mutation(api.stories.approve, { storyId, userId });
+    await t.mutation(api.stories.setStage, { storyId, userId, stage: "source" });
+    expect((await story()).state).toBe("writing");
+    expect((await t.query(api.turns.list, { storyId })).every((x) => x.status === "cancelled")).toBe(true);
+  });
+
+  test("a song in progress is brought in at the stage it had reached", async () => {
+    const { t, userId, storyId, story } = await remake({ adopt: "jem-time-is-running-out", title: "" });
+    const s = await story();
+    expect(s.slug).toBe("jem-time-is-running-out");
+    expect(s.title).toBe("jem-time-is-running-out");
+    await t.mutation(api.stories.setSource, {
+      storyId,
+      source: { adopt: "jem-time-is-running-out", startAt: "render", notes: "Scene 14 still needs a retake" },
+    });
+    await t.mutation(api.stories.approve, { storyId, userId });
+    expect((await story()).stage).toBe("render");
+    const [turn] = await t.query(api.turns.list, { storyId });
+    expect(turn!.display).toBe("Song brought in at Render");
+    expect(turn!.prompt).toContain("adopts a song that was started outside Dynastory");
+    expect(turn!.prompt).toContain("Scene 14 still needs a retake");
+    expect(turn!.prompt).toContain("Goal for Render");
+  });
+
+  test("a song folder belongs to one remake, and an adopted remake keeps its folder", async () => {
+    const { t, userId, storyId } = await remake({ adopt: "jem-opening-theme" });
+    await expect(
+      t.mutation(api.stories.createRemake, { userId, title: "Again", adopt: "jem-opening-theme" }),
+    ).rejects.toThrow(/already uses the folder/);
+    await expect(
+      t.mutation(api.stories.createRemake, { userId, title: "Bad", adopt: "../etc" }),
+    ).rejects.toThrow(/isn't a song folder name/);
+    await expect(
+      t.mutation(api.stories.setSource, { storyId, source: { url: LINK, notes: "" } }),
+    ).rejects.toThrow(/existing song folder/);
+  });
+
+  test("a story still walks its own stages and its director is told it is a story", async () => {
+    const { t, userId, storyId, story, claimNext } = await setup();
+    await t.mutation(api.stories.approve, { storyId, userId });
+    expect((await story()).stage).toBe("casting");
+    expect((await claimNext()).story.kind).toBe("story");
+    await expect(t.mutation(api.stories.setStage, { storyId, userId, stage: "breakdown" })).rejects.toThrow(/isn't a stage/);
+  });
+});

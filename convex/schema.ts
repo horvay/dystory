@@ -2,7 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { AI_AGENTS } from "../shared/agents";
 import { COMEDY_STYLES } from "../shared/comedy";
-import { STAGE_IDS, STAGE_STATES } from "../shared/stages";
+import { STAGE_IDS, STAGE_STATES, STORY_KINDS } from "../shared/stages";
 
 export const versionKind = v.union(
   v.literal("initial"),
@@ -57,6 +57,20 @@ export const fileInfo = {
 
 export const stage = v.union(...STAGE_IDS.map((s) => v.literal(s)));
 export const stageState = v.union(...STAGE_STATES.map((s) => v.literal(s)));
+export const storyKind = v.union(...STORY_KINDS.map((k) => v.literal(k)));
+
+// What a remake is made from. One of `url` (a link yt-dlp can download),
+// `file` (a video uploaded to the media server) or `adopt` (a song folder
+// that already exists under make_real's work/, started outside the app).
+export const remakeSource = v.object({
+  url: v.optional(v.string()),
+  file: v.optional(v.object({ fileId: v.string(), fileName: v.string(), duration: v.number() })),
+  adopt: v.optional(v.string()),
+  // For an adopted song: the stage it has already reached.
+  startAt: v.optional(stage),
+  // What people told the director to watch out for ("Aja never sings").
+  notes: v.string(),
+});
 
 // What started a turn of the production AI.
 export const turnKind = v.union(
@@ -292,9 +306,15 @@ export default defineSchema({
 
   stories: defineTable({
     title: v.string(),
-    // Folder name under STORIES_DIR where the production AI works.
+    // "remake": a cartoon video remade as live action, with its own stages
+    // (shared/stages.ts). Missing on stories made before remakes existed.
+    kind: v.optional(storyKind),
+    // Folder name where the production AI works: under STORIES_DIR for a
+    // story, under make_real's work/ for a remake.
     slug: v.string(),
-    docId: v.id("docs"), // the script
+    // The script. A remake has none; it has a source instead.
+    docId: v.optional(v.id("docs")),
+    source: v.optional(remakeSource),
     videoId: v.id("videos"), // cuts, images and notes for review
     createdBy: v.id("users"),
     updatedAt: v.number(),

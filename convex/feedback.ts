@@ -125,7 +125,7 @@ async function flushStory(
     const lines = await takePending(ctx, storyId);
     if (!lines.length && !sentBack) return;
     const n = lines.length;
-    const label = stageInfo(story.stage).label;
+    const label = stageInfo(story.stage, story.kind).label;
     const who = sentBack && ((await ctx.db.get(sentBack.userId))?.name ?? "Someone");
     const lead = sentBack
       ? `${who} looked at ${label} and says it's not good yet.${sentBack.text && !sentBack.anchored ? ` In their words: ${sentBack.text}` : ""}${n ? "\n\nTheir notes:" : ""}`

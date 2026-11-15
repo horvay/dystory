@@ -2,14 +2,14 @@
 // Clicking a stage only shows it (scrolls the thread there); redoing from an
 // earlier stage or skipping ahead is a separate, confirmed action in its menu.
 import { useQuery } from "convex/react";
-import { Check, Clapperboard, FileText, Images, LoaderCircle, MessagesSquare, MoreHorizontal, NotebookPen } from "lucide-react";
+import { Check, Clapperboard, FileText, FileVideo, Images, LoaderCircle, MessagesSquare, MoreHorizontal, NotebookPen } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { api } from "../../convex/_generated/api";
 import { Popover } from "../components/Popover";
 import { cn } from "../lib/hooks";
 import { relativeTime } from "../lib/time";
-import { STAGES, stageIndex, type StageId } from "../../shared/stages";
+import { isSetupStage, stageIndex, stagesOf, type StageId } from "../../shared/stages";
 import { StageMoveDialog } from "./stageUi";
 import type { StoryData, StoryView } from "./StoryPage";
 
@@ -28,8 +28,8 @@ export function StageRail({
   const users = useQuery(api.users.list);
   const names = useMemo(() => new Map(users?.map((u) => [u._id, u.name.split(" ")[0]]) ?? []), [users]);
   const [move, setMove] = useState<StageId | null>(null);
-  const at = stageIndex(story.stage);
-  const steps = STAGES.filter((s) => s.id !== "done");
+  const at = stageIndex(story.stage, story.kind);
+  const steps = stagesOf(story.kind).filter((s) => s.id !== "done");
   const base = `/s/${story._id}`;
 
   return (
@@ -47,7 +47,9 @@ export function StageRail({
                 : story.state === "waiting"
                   ? "Needs you"
                   : story.state === "writing"
-                    ? "Writing"
+                    ? story.kind === "remake"
+                      ? "Setting up"
+                      : "Writing"
                     : "Director working";
           } else if (done) {
             sub = approved
@@ -118,7 +120,7 @@ export function StageRail({
                   )}
                 </span>
               </button>
-              {!current && story.stage !== "script" && (
+              {!current && !isSetupStage(story.stage) && (
                 <StageMenu
                   label={done ? "Redo from here…" : "Skip ahead to here…"}
                   onPick={() => setMove(s.id)}
@@ -131,7 +133,11 @@ export function StageRail({
 
       <div className="shrink-0 space-y-0.5 border-t border-line px-2 py-2">
         <ViewLink href={base + "/thread"} active={view === "thread"} icon={MessagesSquare} label="Thread" />
-        <ViewLink href={base + "/script"} active={view === "script"} icon={FileText} label="Script" />
+        {story.kind === "remake" ? (
+          <ViewLink href={base + "/source"} active={view === "source"} icon={FileVideo} label="Source" />
+        ) : (
+          <ViewLink href={base + "/script"} active={view === "script"} icon={FileText} label="Script" />
+        )}
         <ViewLink
           href={base + "/review"}
           active={view === "review"}

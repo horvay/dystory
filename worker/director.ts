@@ -4,6 +4,10 @@
 // medium effort by default) in the story's folder, with every Claude Code
 // tool plus the app tools in studio-tools.ts. One turn per story at a time.
 //
+// A remake (a cartoon video remade as live action) runs the same way with a
+// different workspace: the make_real repo, its own instructions
+// (remake-prompt.md) and its own model. See workspace().
+//
 // Between turns it watches the background jobs the AI started (transient
 // systemd units, see jobs.ts) and its timers, and wakes it with a turn when
 // one is done.
@@ -13,11 +17,11 @@ import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk"
 import { ConvexClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
-import { stageInfo } from "../shared/stages";
+import { stageInfo, type StoryKind } from "../shared/stages";
 import { errorText, toolLabel } from "./doc-tools";
 import { jobReport, queueLine, stopUnit, unitActive } from "./jobs";
 import { notifyAll } from "./notify";
-import { STUDIO_TOOLS, studioLabel, type StudioCtx } from "./studio-tools";
+import { studioLabel, studioToolsFor, type StudioCtx } from "./studio-tools";
 
 const CONVEX_URL = process.env.VITE_CONVEX_URL;
 if (!CONVEX_URL) throw new Error("VITE_CONVEX_URL is not set (run `bun run dev` once to create .env.local)");
@@ -31,19 +35,28 @@ const POLL_MS = 15_000;
 const PROMPT_FILE = resolve(import.meta.dir, "director-prompt.md");
 const STYLE_FILE = resolve(import.meta.dir, "writing-style.md");
 
+// Remakes: the make_real repo holds the depth-route scripts, the profiles and
+// the helper agents (.claude/agents), and each song's root under work/.
+const REMAKE_DIR = resolve(process.env.REMAKE_DIR || join(process.env.HOME ?? "", "Music/make_real"));
+const REMAKE_MODEL = process.env.REMAKE_MODEL || "claude-fable-5-2";
+const REMAKE_EFFORT = (process.env.REMAKE_EFFORT || EFFORT) as typeof EFFORT;
+const REMAKE_PROMPT_FILE = resolve(import.meta.dir, "remake-prompt.md");
+// Where the media server keeps uploaded videos (a remake's source file).
+const MEDIA_DIR = resolve(process.env.MEDIA_DIR || join(import.meta.dir, "..", "data"));
+
 const convex = new ConvexClient(CONVEX_URL);
 const active = new Map<Id<"turns">, Id<"stories">>();
 
 // Re-read for every turn so edits apply without a restart.
-function systemPrompt() {
-  return [readFileSync(PROMPT_FILE, "utf8"), "## How you write\n", readFileSync(STYLE_FILE, "utf8")].join("\n\n");
+function systemPrompt(promptFile: string) {
+  return [readFileSync(promptFile, "utf8"), "## How you write\n", readFileSync(STYLE_FILE, "utf8")].join("\n\n");
 }
 
-function studioServer(ctx: StudioCtx) {
+function studioServer(ctx: StudioCtx, kind: StoryKind) {
   return createSdkMcpServer({
     name: "studio",
     version: "1.0.0",
-    tools: STUDIO_TOOLS.map((t) => tool(t.name, t.description, t.schema, (args: any) => t.call(ctx, args))),
+    tools: studioToolsFor(kind).map((t) => tool(t.name, t.description, t.schema, (args: any) => t.call(ctx, args))),
   });
 }
 
@@ -80,24 +93,92 @@ function activityLabel(name: string, input: Record<string, unknown>): string | n
 type Job = NonNullable<Awaited<ReturnType<typeof claim>>>;
 const claim = (turnId: Id<"turns">) => convex.mutation(api.director.claim, { turnId });
 
-function storyFolder(slug: string) {
-  return join(STORIES_DIR, slug);
+/**
+ * Where a story's director works and how it is run.
+ * - `cwd`: the session's working directory, which decides the project
+ *   instructions and helper agents it loads
+ * - `folder`: the story's own folder, which the app tools resolve paths
+ *   against and where job logs go (.director/jobs)
+ */
+type Workspace = {
+  cwd: string;
+  folder: string;
+  promptFile: string;
+  model: string;
+  effort: typeof EFFORT;
+  dirs: string[];
+};
+
+function workspace(story: { kind: StoryKind; slug: string }): Workspace {
+  if (story.kind === "remake") {
+    return {
+      cwd: REMAKE_DIR,
+      folder: join(REMAKE_DIR, "work", story.slug, "depth"),
+      promptFile: REMAKE_PROMPT_FILE,
+      model: REMAKE_MODEL,
+      effort: REMAKE_EFFORT,
+      dirs: [resolve(STORIES_DIR, ".."), MEDIA_DIR],
+    };
+  }
+  const folder = join(STORIES_DIR, story.slug);
+  return { cwd: folder, folder, promptFile: PROMPT_FILE, model: MODEL, effort: EFFORT, dirs: [resolve(STORIES_DIR, "..")] };
 }
 
-/** Makes the story folder on its first turn and drops the current script in it. */
-async function prepareFolder(job: Job, folder: string) {
-  mkdirSync(join(folder, "00-script"), { recursive: true });
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+/** A remake's brief: what to remake and what people said about it. Kept beside the song root. */
+function remakeBrief(job: Job, ws: Workspace) {
+  const src = job.story.source;
+  const lines = [
+    `# ${job.story.title}: remake brief`,
+    "",
+    "Dynastory writes this file before every turn. Change the source in the app, not here.",
+    "",
+    `- Song root: ${ws.folder}`,
+    `- Page: ${APP_URL}/s/${job.story._id}`,
+  ];
+  if (src?.url) lines.push(`- Source link: ${src.url}`);
+  if (src?.file) {
+    lines.push(
+      `- Source file: ${join(MEDIA_DIR, "files", `${src.file.fileId}.mp4`)} (uploaded as "${src.file.fileName}", ${mmss(src.file.duration)})`,
+    );
+  }
+  if (src?.adopt) lines.push(`- Adopted song: this folder existed before the remake came into Dynastory. Its README says where it stands.`);
+  lines.push("", "## Notes from people", "", src?.notes.trim() || "(none)", "");
+  return lines.join("\n");
+}
+
+/** Makes the story folder on its first turn and drops the current script (or a remake's brief) in it. */
+async function prepareFolder(job: Job, ws: Workspace) {
+  if (job.story.kind === "remake") {
+    // new-song.sh makes the song root itself; the brief sits one level up, in work/<slug>/.
+    const home = resolve(ws.folder, "..");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "BRIEF.md"), remakeBrief(job, ws));
+    return;
+  }
+  mkdirSync(join(ws.folder, "00-script"), { recursive: true });
   try {
     const { title, markdown } = await convex.mutation(api.director.readScript, { turnId: job.turnId });
-    writeFileSync(join(folder, "00-script", "script-current.md"), `# ${title}\n\n${markdown}\n`);
+    writeFileSync(join(ws.folder, "00-script", "script-current.md"), `# ${title}\n\n${markdown}\n`);
   } catch (err) {
     console.warn(`[director] couldn't write the script for ${job.story.slug}: ${errorText(err)}`);
   }
 }
 
-function buildPrompt(job: Job, folder: string, fresh: boolean) {
+function buildPrompt(job: Job, ws: Workspace, fresh: boolean) {
   if (job.kind === "compact") return "/compact";
-  const head = `[Dynastory] Story "${job.story.title}" · stage: ${stageInfo(job.story.stage).label} · folder: ${folder} · page: ${APP_URL}/s/${job.story._id}`;
+  const kind = job.story.kind;
+  const label = stageInfo(job.story.stage, kind).label;
+  const page = `${APP_URL}/s/${job.story._id}`;
+  if (kind === "remake") {
+    const head = `[Dynastory] Remake "${job.story.title}" · stage: ${label} · song root: ${ws.folder} · brief: ${resolve(ws.folder, "..", "BRIEF.md")} · page: ${page}`;
+    const intro = fresh
+      ? "\n\nThis is the start of your session for this remake. Before doing production work, read AGENTS.md in this repository and the documents it names for the work at hand, then the brief, story_info and the song root's README (if there is one) for where things stand."
+      : "";
+    return `${head}${intro}\n\n${job.prompt}`;
+  }
+  const head = `[Dynastory] Story "${job.story.title}" · stage: ${label} · folder: ${ws.folder} · page: ${page}`;
   const intro = fresh
     ? "\n\nThis is the start of your session for this story. Read the clips guides named in your instructions before doing production work, then check story_info and the story README (if there is one) for where things stand."
     : "";
@@ -110,8 +191,9 @@ async function runTurn(turnId: Id<"turns">) {
     active.delete(turnId);
     return;
   }
-  const folder = storyFolder(job.story.slug);
-  await prepareFolder(job, folder);
+  const ws = workspace(job.story);
+  const folder = ws.folder;
+  await prepareFolder(job, ws);
   console.log(`[director] ${job.story.slug}: ${job.kind} turn${job.requesterName ? ` from ${job.requesterName}` : ""}`);
 
   const abort = new AbortController();
@@ -153,20 +235,20 @@ async function runTurn(turnId: Id<"turns">) {
     let tokens: number | undefined;
     let error: string | undefined;
     const q = query({
-      prompt: buildPrompt(job, folder, !resume),
+      prompt: buildPrompt(job, ws, !resume),
       options: {
-        systemPrompt: { type: "preset", preset: "claude_code", append: systemPrompt() },
-        model: MODEL,
-        effort: EFFORT,
-        cwd: folder,
-        additionalDirectories: [resolve(STORIES_DIR, "..")],
+        systemPrompt: { type: "preset", preset: "claude_code", append: systemPrompt(ws.promptFile) },
+        model: ws.model,
+        effort: ws.effort,
+        cwd: ws.cwd,
+        additionalDirectories: ws.dirs,
         // Greg's global instructions (GPU rules, browser leases) and the clips skills.
         settingSources: ["user", "project"],
         // Nobody is at a terminal to approve anything; it works like Greg's own sessions.
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
         disallowedTools: ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode"],
-        mcpServers: { studio: studioServer(ctx) },
+        mcpServers: { studio: studioServer(ctx, job.story.kind) },
         includePartialMessages: true,
         abortController: abort,
         resume,
@@ -337,7 +419,9 @@ async function main() {
       .catch((err) => console.error(`[director] checking jobs failed: ${errorText(err)}`))
       .finally(() => setTimeout(poll, POLL_MS));
   poll();
-  console.log(`[director] ready (model ${MODEL}, ${EFFORT} effort; stories in ${STORIES_DIR})`);
+  console.log(
+    `[director] ready (model ${MODEL}, ${EFFORT} effort; stories in ${STORIES_DIR}; remakes: ${REMAKE_MODEL}, ${REMAKE_EFFORT} effort, in ${REMAKE_DIR})`,
+  );
 }
 
 main().catch((err) => {

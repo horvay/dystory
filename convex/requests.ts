@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { STAGES, nextStage, stageIndex, type StageId } from "../shared/stages";
+import { STAGES, isSetupStage, nextStage, stageIndex, stagesOf, type StageId } from "../shared/stages";
 
 type Request = Doc<"requests">;
 
@@ -183,13 +183,14 @@ export const approvals = query({
       .withIndex("by_story", (q) => q.eq("storyId", storyId))
       .filter((q) => q.eq(q.field("kind"), "stage"))
       .collect();
+    const kind = (await ctx.db.get(storyId))?.kind;
     const out: Partial<Record<StageId, { by?: Id<"users">; at: number }>> = {};
     for (const t of turns) {
       // The turn that starts a stage approved the one before it.
       const started = t.stage;
-      if (!started || started === "script" || !/approved|into production/.test(t.display)) continue;
-      const prev = STAGES[stageIndex(started) - 1]?.id;
-      if (prev && nextStage(prev) === started) out[prev] = { by: t.requestedBy, at: t._creationTime };
+      if (!started || isSetupStage(started) || !/approved|into production|Remake started/.test(t.display)) continue;
+      const prev = stagesOf(kind)[stageIndex(started, kind) - 1]?.id;
+      if (prev && nextStage(prev, kind) === started) out[prev] = { by: t.requestedBy, at: t._creationTime };
     }
     return out;
   },

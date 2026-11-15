@@ -6,7 +6,7 @@ A studio for short AI-made comedy videos, from the first line of a script to a p
 Idea Board (scripts) and Video Review (cuts and comments) on 2026-10-19 and runs on gregarch. It was called Dystory
 until 2026-10-23; the folder, the systemd service, the repo, storage keys and job units still use `dystory`.
 
-A story moves through stages:
+A story moves through stages (a [remake](#remakes) has its own):
 
 **Script → Casting → Voice-over → Animatic → Animation → Sound → Final cut → Packaging → Upload → Short**
 
@@ -36,6 +36,48 @@ A story moves through stages:
 
 Plain reviews (news segments, long-video clips) still work as they did on Video Review: Reviews in the sidebar, or
 `~/ai/clips/tools/review_site.py`.
+
+## Remakes
+
+A **remake** is a second kind of story: a cartoon video (usually a song) remade as live action, shot for shot. It has
+no script. "New remake" on the home page or "Remake" above the story list starts one, and it moves through its own
+stages:
+
+**Source → Breakdown → Stills → Render → Final cut → Packaging → Upload → Short**
+
+- **Source**: a link (YouTube, or anything yt-dlp downloads) or a video file, plus notes for the director ("Aja
+  never sings"). "Start the remake" hands it over.
+- **Breakdown**: the director gets the video, maps every shot, builds the depth video and the transcript, and works
+  out the cast. You approve **the cast**: each character's profile and who sings.
+- **Stills**: one ChatGPT opening still per shot, posted beside its cartoon frame. You approve **the stills**. Nothing
+  renders before that.
+- **Render**: MiniMax H3 on the B70, every take reviewed and the bad ones retaken. A partial cut lands in the thread
+  every 5 finished shots; the stage's review is the whole video in source order.
+- **Final cut** onward works like a story's last stages: transitions and titles, packaging, YouTube, the Short.
+
+The work itself lives in `~/Music/make_real` (the depth route: `scripts/depth-route/README.md`, `AGENTS.md`). The
+remake's director runs there, in that repo, so it loads its rule book and its two helper agents
+(`chatgpt-image-maker`, `take-reviewer`). Each remake's song root is `make_real/work/<slug>/depth/`, and Dynastory
+writes `work/<slug>/BRIEF.md` (the source and the notes) before every turn.
+
+**A song already in progress** in make_real can be brought in: "New remake" → "A song in progress" lists the song
+folders that have a depth-route root. Say which stage it has reached; the director reads the song's README, posts its
+newest cut to the thread and carries on from there. A song folder belongs to one remake.
+
+What differs from a story, in the code:
+
+| | Story | Remake |
+|---|---|---|
+| `stories.kind` | missing or `"story"` | `"remake"` |
+| First stage | `script` (a document) | `source` (`stories.source`: `url`, `file` or `adopt`, plus `notes`) |
+| Stages | `STAGES` in `shared/stages.ts` | `REMAKE_STAGES` (the last four share ids with a story's, with their own goals) |
+| Director runs in | `~/ai/clips/short-stories/<slug>/` | `~/Music/make_real` (song root `work/<slug>/depth/`) |
+| Instructions | `worker/director-prompt.md` | `worker/remake-prompt.md` |
+| Model | `DIRECTOR_MODEL` (Opus) | `REMAKE_MODEL` (Fable) |
+| App tools | all of `studio-tools.ts` | the same minus the script, voice, character and story-catalog tools |
+
+`./dr drive` and `./dr retake` submit their own B70 jobs one at a time, so `start_job` never puts those two commands
+in the B70 queue themselves, whatever `gpu` says (`queuesItself` in `worker/jobs.ts`).
 
 ## Run it
 
@@ -133,6 +175,8 @@ Settings (`.env.local` or the environment): `DIRECTOR_MODEL` (default `claude-op
 (`medium`), `DIRECTOR_CONCURRENCY` (4), `AI_MODEL` for the script assistant's Claude (`claude-fable-5-2`),
 `MUSE_MODEL` to override Muse, `STORIES_DIR`
 (`~/ai/clips/short-stories`), `MEDIA_DIR` (`./data`), `APP_URL` (the address used in links the director writes).
+For remakes: `REMAKE_MODEL` (`claude-fable-5-2`), `REMAKE_EFFORT` (the director's effort unless set), `REMAKE_DIR`
+(`~/Music/make_real`).
 
 ## Layout
 
@@ -141,8 +185,9 @@ convex/        backend: documents and their history, the script assistant's queu
                feedback, wakeups, voices, characters, videos/versions/comments/notes/images (review)
 shared/        editor schema + Markdown, stages, director settings
 src/           React app: components/ (shell, sidebar, home, documents, reviews), story/ (story page: stage
-               rail, thread, decision bar), voices/, characters/, player/, notes/, images/, panels/ (script assistant, chat, history)
+               rail, thread, decision bar, a remake's Source page), voices/, characters/, player/, notes/, images/, panels/ (script assistant, chat, history)
 worker/        script-assistant.ts, director.ts, studio-tools.ts, jobs.ts, media.ts, prompts
+               (director-prompt.md for stories, remake-prompt.md for remakes)
 media/         media server
 gate/          password gate
 stt/           dictation

@@ -7,6 +7,7 @@ import type { ConvexClient } from "convex/browser";
 import { z } from "zod";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import type { StoryKind } from "../shared/stages";
 import { errorText, type ToolResult } from "./doc-tools";
 import { b70Kind, startJob, usesB70 } from "./jobs";
 import { uploadAudio, uploadImage, uploadVideo } from "./media";
@@ -51,7 +52,7 @@ const json = (v: unknown) => JSON.stringify(v, null, 2);
 export const STUDIO_TOOLS = [
   studioTool(
     "story_info",
-    "Where the story stands: stage, state, every posted cut (number, stage, summary, open comments), notes, and the background jobs you are waiting on.",
+    "Where the story stands: stage, state, every posted cut (number, stage, summary, open comments), notes, and the background jobs you are waiting on. For a remake, also its source (the link, file or adopted song) and the notes people gave with it.",
     {},
     async (ctx) => {
       const info = await ctx.convex.mutation(api.director.storyInfo, { turnId: ctx.turnId });
@@ -317,6 +318,23 @@ export const STUDIO_TOOLS = [
 ];
 
 export const STUDIO_TOOL_NAMES = STUDIO_TOOLS.map((t) => `mcp__studio__${t.name}`);
+
+// A remake has no script, no voices to cast and no drawn characters: its
+// cast lives in make_real's profiles/, and its brief is in story_info.
+const NOT_FOR_REMAKES = new Set([
+  "read_script",
+  "edit_script",
+  "list_voices",
+  "add_voice",
+  "list_characters",
+  "add_character",
+  "list_stories",
+  "read_story",
+]);
+
+/** The app tools a director of this kind of story gets. */
+export const studioToolsFor = (kind: StoryKind) =>
+  kind === "remake" ? STUDIO_TOOLS.filter((t) => !NOT_FOR_REMAKES.has(t.name)) : STUDIO_TOOLS;
 
 /** The activity line shown in the story's thread for a tool call. */
 export function studioLabel(name: string, input: Record<string, unknown>): string | null {

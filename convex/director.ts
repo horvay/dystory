@@ -5,7 +5,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { COMPACT_TOKENS } from "../shared/director";
-import { STAGES, stageInfo } from "../shared/stages";
+import { isSetupStage, stageInfo, stagesOf } from "../shared/stages";
 import { applyEdits, docMarkdown } from "./ai";
 import { directorUser } from "./bots";
 import { fileInfo } from "./schema";
@@ -71,7 +71,7 @@ async function resumeCutOff(ctx: MutationCtx, turn: Doc<"turns">) {
     await ctx.db.patch(story._id, {
       prevState: undefined,
       stateSet: undefined,
-      ...(story.stateSet || story.stage === "script" || story.stage === "done"
+      ...(story.stateSet || isSetupStage(story.stage) || story.stage === "done"
         ? {}
         : { state: "waiting" as const, statusLine: "Restarts kept cutting the director off. Tell it to carry on." }),
     });
@@ -141,9 +141,11 @@ export const claim = mutation({
       story: {
         _id: story._id,
         title: story.title,
+        kind: story.kind ?? ("story" as const),
         slug: story.slug,
         stage: story.stage,
         docId: story.docId,
+        source: story.source,
         videoId: story.videoId,
         sessionId: story.sessionId,
       },
@@ -197,7 +199,7 @@ export const finish = mutation({
       .filter((q) => q.eq(q.field("status"), "waiting"))
       .first();
     const prev = story.prevState ?? story.state;
-    if (story.stage === "script" || story.stage === "done") {
+    if (isSetupStage(story.stage) || story.stage === "done") {
       // Before production and after it, talking to the director doesn't change anything.
       patch.state = story.stage === "done" ? "done" : "writing";
       patch.statusLine = undefined;
@@ -259,7 +261,7 @@ export function handBack(story: Doc<"stories">, response: string, failed: boolea
   return {
     title: `${story.title}: ${headline}`,
     // Plain text: notifications don't render Markdown.
-    body: clean(body.replace(/[*_`#>]/g, "").replace(/\s+/g, " "), 180) || stageInfo(story.stage).label,
+    body: clean(body.replace(/[*_`#>]/g, "").replace(/\s+/g, " "), 180) || stageInfo(story.stage, story.kind).label,
     url: `/s/${story._id}`,
     tag: `story-${story._id}`,
   };
@@ -300,7 +302,7 @@ export const requestReview = mutation({
   },
   handler: async (ctx, { turnId, message, cuts, images, step }) => {
     const { story } = await runningTurn(ctx, turnId);
-    const line = clean(message, 300) || `${stageInfo(story.stage).label} is ready for review`;
+    const line = clean(message, 300) || `${stageInfo(story.stage, story.kind).label} is ready for review`;
     await openRequest(ctx, story, turnId, "review", line, { cuts, images }, step ? clean(step, 80) : undefined);
     await ctx.db.patch(story._id, {
       state: "review",
@@ -353,9 +355,11 @@ export const storyInfo = mutation({
       .collect();
     return {
       title: story.title,
+      kind: story.kind ?? "story",
       slug: story.slug,
       stage: story.stage,
-      stages: STAGES.map((s) => s.id),
+      stages: stagesOf(story.kind).map((s) => s.id),
+      source: story.source,
       state: story.state,
       statusLine: story.statusLine,
       cuts: versions.map((ver) => {
@@ -435,6 +439,7 @@ export const readScript = mutation({
   args: { turnId: v.id("turns") },
   handler: async (ctx, { turnId }) => {
     const { story } = await runningTurn(ctx, turnId);
+    if (!story.docId) throw new ConvexError("A remake has no script. Its source and notes are in story_info.");
     const doc = await ctx.db.get(story.docId);
     return { title: doc?.title ?? story.title, markdown: await docMarkdown(ctx, story.docId) };
   },
@@ -448,11 +453,13 @@ export const editScript = mutation({
   },
   handler: async (ctx, { turnId, edits, reason }) => {
     const { story } = await runningTurn(ctx, turnId);
-    await takeSnapshot(ctx, story.docId, "ai-before");
-    await applyEdits(ctx, story.docId, edits, "director");
+    const docId = story.docId;
+    if (!docId) throw new ConvexError("A remake has no script.");
+    await takeSnapshot(ctx, docId, "ai-before");
+    await applyEdits(ctx, docId, edits, "director");
     const now = Date.now();
-    await ctx.db.patch(story.docId, { updatedAt: now, lastChangedAt: now });
-    await takeSnapshot(ctx, story.docId, "ai-after", { byAi: true, label: `Director: ${clean(reason, 80)}` });
+    await ctx.db.patch(docId, { updatedAt: now, lastChangedAt: now });
+    await takeSnapshot(ctx, docId, "ai-after", { byAi: true, label: `Director: ${clean(reason, 80)}` });
   },
 });
 

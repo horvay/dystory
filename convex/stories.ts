@@ -1,13 +1,13 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { slugify } from "../shared/director";
-import { nextStage, stageIndex, stageInfo, type StageId } from "../shared/stages";
+import { isSetupStage, nextStage, stageIndex, stageInfo, type StageId } from "../shared/stages";
 import { docMarkdown } from "./ai";
 import { insertDoc } from "./docs";
 import { takePending } from "./feedback";
 import { closeRequests } from "./requests";
-import { stage as stageValidator } from "./schema";
+import { remakeSource, stage as stageValidator } from "./schema";
 import { queueTurn } from "./turns";
 
 async function uniqueSlug(ctx: QueryCtx, title: string) {
@@ -20,6 +20,13 @@ async function uniqueSlug(ctx: QueryCtx, title: string) {
       .first();
     if (!taken) return slug;
   }
+}
+
+/** One line saying what a remake is made from, for its card. */
+function sourceLine(source: Doc<"stories">["source"]) {
+  if (!source) return "";
+  const from = source.adopt ? `work/${source.adopt}` : (source.url ?? source.file?.fileName ?? "");
+  return [from, source.notes].filter(Boolean).join(" · ").slice(0, 220);
 }
 
 /** What the story cards and the sidebar show. */
@@ -47,10 +54,10 @@ async function summary(ctx: QueryCtx, story: Doc<"stories">) {
           .order("desc")
           .first()
       )?.thumb;
-  const doc = await ctx.db.get(story.docId);
+  const doc = story.docId ? await ctx.db.get(story.docId) : null;
   return {
     ...story,
-    snippet: doc?.snippet ?? "",
+    snippet: story.kind === "remake" ? sourceLine(story.source) : (doc?.snippet ?? ""),
     latestVersion: video?.latestVersion ?? 0,
     latestFileId: video?.latestFileId,
     latestDuration: video?.latestDuration,
@@ -128,7 +135,7 @@ export const scriptBySlug = mutation({
       .query("stories")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique();
-    if (!story || story.trashed) return null;
+    if (!story || story.trashed || !story.docId) return null;
     const doc = await ctx.db.get(story.docId);
     if (!doc) return null;
     return { title: story.title, slug: story.slug, stage: story.stage, markdown: await docMarkdown(ctx, story.docId) };
@@ -189,6 +196,84 @@ export const create = mutation({
   },
 });
 
+/** Folder names make_real accepts: what slugify makes, as typed for an existing song. */
+const FOLDER = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/**
+ * A new remake: a cartoon video remade as live action. It has no script. It
+ * starts on its Source stage, where people say what to remake. `adopt` is the
+ * name of a song folder that already exists under make_real's work/ (started
+ * outside the app); the remake then works in that folder.
+ */
+export const createRemake = mutation({
+  args: { userId: v.id("users"), title: v.string(), adopt: v.optional(v.string()) },
+  handler: async (ctx, { userId, title, adopt }) => {
+    const name = (title.trim() || adopt || "Untitled remake").slice(0, 120);
+    let slug: string;
+    if (adopt) {
+      if (!FOLDER.test(adopt)) throw new ConvexError(`"${adopt}" isn't a song folder name`);
+      const taken = await ctx.db
+        .query("stories")
+        .withIndex("by_slug", (q) => q.eq("slug", adopt))
+        .first();
+      if (taken) throw new ConvexError(`“${taken.title}” already uses the folder ${adopt}${taken.trashed ? " (it's in the trash)" : ""}`);
+      slug = adopt;
+    } else {
+      slug = await uniqueSlug(ctx, name);
+    }
+    const now = Date.now();
+    const videoId = await ctx.db.insert("videos", {
+      title: name,
+      createdBy: userId,
+      updatedAt: now,
+      trashed: false,
+      latestVersion: 0,
+    });
+    const storyId = await ctx.db.insert("stories", {
+      title: name,
+      kind: "remake",
+      slug,
+      source: adopt ? { adopt, notes: "" } : undefined,
+      videoId,
+      createdBy: userId,
+      updatedAt: now,
+      trashed: false,
+      stage: "source",
+      state: "writing",
+      conversationStartedAt: now,
+    });
+    await ctx.db.patch(videoId, { storyId });
+    return storyId;
+  },
+});
+
+/** Whether a remake's source says enough to start on. */
+export function sourceReady(source: Doc<"stories">["source"]) {
+  return !!source && [source.url?.trim(), source.file, source.adopt].filter(Boolean).length === 1;
+}
+
+/** Sets what a remake is made from. Only while it is on its Source stage. */
+export const setSource = mutation({
+  args: { storyId: v.id("stories"), source: remakeSource },
+  handler: async (ctx, { storyId, source }) => {
+    const story = await ctx.db.get(storyId);
+    if (!story || story.kind !== "remake") throw new ConvexError("Remake not found");
+    if (story.stage !== "source") throw new ConvexError("The remake has already started. Write to the director instead.");
+    // An adopted song keeps its folder: the slug was taken from it.
+    if (story.source?.adopt && source.adopt !== story.source.adopt) {
+      throw new ConvexError("This remake was made for an existing song folder. Make a new remake for another source.");
+    }
+    if (!story.source?.adopt && source.adopt) throw new ConvexError("Pick the existing song when making the remake.");
+    const url = source.url?.trim().slice(0, 2000) || undefined;
+    if (url && !/^https?:\/\/\S+$/.test(url)) throw new ConvexError("That doesn't look like a link");
+    const startAt = source.adopt && source.startAt && stageIndex(source.startAt, "remake") > 0 && source.startAt !== "done" ? source.startAt : undefined;
+    await ctx.db.patch(storyId, {
+      source: { ...source, url, startAt, notes: source.notes.slice(0, 20_000) },
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const rename = mutation({
   args: { storyId: v.id("stories"), title: v.string() },
   handler: async (ctx, { storyId, title }) => {
@@ -231,15 +316,34 @@ async function stopEverything(ctx: MutationCtx, storyId: Id<"stories">) {
   }
 }
 
+/** What a remake's director is told about its source when production starts. */
+function sourceBrief(story: Doc<"stories">) {
+  const src = story.source;
+  if (!src) return "";
+  const what = src.adopt
+    ? `This remake adopts a song that was started outside Dynastory: the song root already exists (work/${src.adopt}/depth). Read its README and look through the folder to learn where it stands and what was decided, before changing anything. Its earlier cuts were reviewed on the old review site (docs/PUBLISHING.md says how to read those comments); from now on cuts are posted here. Post the newest cut it has here first, so the thread has it, then say in two or three sentences where the song stands.`
+    : src.url
+      ? `The source is this link: ${src.url}`
+      : `The source is an uploaded file, "${src.file?.fileName}" (its path is in BRIEF.md).`;
+  return `\n\n${what}${src.notes.trim() ? `\n\nNotes from the people who started it:\n${src.notes.trim()}` : ""}`;
+}
+
 /** What the production AI is told when a stage starts. */
-function stageKickoff(stage: StageId, from: StageId, who: string, note: string | undefined, back: boolean) {
-  const info = stageInfo(stage);
-  const prev = stageInfo(from);
+function stageKickoff(story: Doc<"stories">, stage: StageId, who: string, note: string | undefined, back: boolean) {
+  const kind = story.kind;
+  const from = story.stage;
+  const info = stageInfo(stage, kind);
+  const prev = stageInfo(from, kind);
   const opening = back
     ? `${who} moved the story back from ${prev.label} to ${info.label}.`
     : from === "script"
       ? `${who} put the script into production. The first stage is ${info.label}.`
-      : `${who} approved ${prev.label}. The next stage is ${info.label}.`;
+      : from === "source"
+        ? story.source?.adopt
+          ? `${who} brought this song into Dynastory. It starts at ${info.label}.`
+          : `${who} started the remake. The first stage is ${info.label}.`
+        : `${who} approved ${prev.label}. The next stage is ${info.label}.`;
+  const source = from === "source" ? sourceBrief(story) : "";
   const casting =
     !back && from === "casting"
       ? "\n\nThe cast is approved: add every newly designed voice that was approved to the voice catalog now (add_voice), with its reference wav, the reference's exact transcript and how it was made."
@@ -247,7 +351,7 @@ function stageKickoff(stage: StageId, from: StageId, who: string, note: string |
   const redo = back
     ? "\n\nWork out what has to be redone from here on (for example, re-voiced lines break lip sync on their talk shots) and say so before starting."
     : "";
-  return `${opening}${note ? `\n\n${who} adds: ${note}` : ""}${casting}${redo}
+  return `${opening}${source}${note ? `\n\n${who} adds: ${note}` : ""}${casting}${redo}
 
 Goal for ${info.label}: ${info.goal}
 
@@ -264,10 +368,12 @@ async function moveTo(
   extra?: string,
 ) {
   const who = (await ctx.db.get(userId))?.name ?? "Someone";
-  const back = stageIndex(to) < stageIndex(story.stage);
-  if (to === "script") {
+  const kind = story.kind;
+  if (stageIndex(to, kind) < 0) throw new ConvexError(`${stageInfo(to).label} isn't a stage of this ${kind === "remake" ? "remake" : "story"}`);
+  const back = stageIndex(to, kind) < stageIndex(story.stage, kind);
+  if (isSetupStage(to)) {
     await stopEverything(ctx, story._id);
-    await ctx.db.patch(story._id, { stage: "script", state: "writing", statusLine: undefined, updatedAt: Date.now() });
+    await ctx.db.patch(story._id, { stage: to, state: "writing", statusLine: undefined, updatedAt: Date.now() });
     return;
   }
   if (to === "done") {
@@ -277,17 +383,21 @@ async function moveTo(
   await ctx.db.patch(story._id, {
     stage: to,
     state: "working",
-    statusLine: `Starting ${stageInfo(to).label}`,
+    statusLine: `Starting ${stageInfo(to, kind).label}`,
     updatedAt: Date.now(),
   });
   await queueTurn(ctx, story._id, {
     kind: "stage",
-    prompt: stageKickoff(to, story.stage, who, note?.trim() || undefined, back) + (extra ? `\n\n${extra}` : ""),
+    prompt: stageKickoff(story, to, who, note?.trim() || undefined, back) + (extra ? `\n\n${extra}` : ""),
     display: back
-      ? `Moved back to ${stageInfo(to).label}${note?.trim() ? `: ${note.trim()}` : ""}`
+      ? `Moved back to ${stageInfo(to, kind).label}${note?.trim() ? `: ${note.trim()}` : ""}`
       : story.stage === "script"
         ? "Script went into production"
-        : `${stageInfo(story.stage).label} approved${note?.trim() ? `: ${note.trim()}` : ""}`,
+        : story.stage === "source"
+          ? story.source?.adopt
+            ? `Song brought in at ${stageInfo(to, kind).label}`
+            : "Remake started"
+          : `${stageInfo(story.stage, kind).label} approved${note?.trim() ? `: ${note.trim()}` : ""}`,
     requestedBy: userId,
   });
 }
@@ -310,8 +420,13 @@ export const approve = mutation({
     const extra = pending.length
       ? `Notes that came in with the approval (small fixes, not blockers; do them as part of ${step ? "the rest of this stage" : "the next stage"}):\n${pending.join("\n")}`
       : "";
-    if (step) await approveStep(ctx, story, userId, step, note?.trim() || undefined, extra);
-    else await moveTo(ctx, story, userId, nextStage(story.stage), note, extra);
+    if (step) return approveStep(ctx, story, userId, step, note?.trim() || undefined, extra);
+    if (story.stage === "source") {
+      if (!sourceReady(story.source)) throw new ConvexError("Say what to remake first: a link, a file, or an existing song.");
+      // An adopted song starts at the stage it had reached.
+      return moveTo(ctx, story, userId, story.source?.startAt ?? nextStage("source", "remake"), note, extra);
+    }
+    await moveTo(ctx, story, userId, nextStage(story.stage, story.kind), note, extra);
   },
 });
 
@@ -333,7 +448,7 @@ async function approveStep(
   extra: string,
 ) {
   const who = (await ctx.db.get(userId))?.name ?? "Someone";
-  const info = stageInfo(story.stage);
+  const info = stageInfo(story.stage, story.kind);
   await ctx.db.patch(story._id, {
     state: "working",
     statusLine: `Carrying on with ${info.label}`,

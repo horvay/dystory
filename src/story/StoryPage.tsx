@@ -12,15 +12,17 @@ import { useToast } from "../components/Toast";
 import { StudioTabs } from "../components/VideoPage";
 import { cn, useMediaQuery } from "../lib/hooks";
 import { timecode } from "../lib/time";
-import { STAGES, stageIndex, stageInfo, type StageId } from "../../shared/stages";
+import { firstStage, isSetupStage, stageIndex, stageInfo, stagesOf, type StageId } from "../../shared/stages";
 import { DecisionBar } from "./DecisionBar";
 import { StageRail } from "./StageRail";
 import { STATE_TONE } from "./stageUi";
+import { SourcePage } from "./SourcePage";
 import { scrollToStage, Thread } from "./Thread";
 
 export type StoryData = NonNullable<ReturnType<typeof useQuery<typeof api.stories.get>>>;
-export type StoryView = "thread" | "script" | Tab;
-const VIEWS: StoryView[] = ["thread", "script", "review", "images", "notes"];
+/** "script" is a story's first stage and "source" a remake's: what people prepare before production. */
+export type StoryView = "thread" | "script" | "source" | Tab;
+const VIEWS: StoryView[] = ["thread", "script", "source", "review", "images", "notes"];
 
 export function StoryPage({ storyId, tab, item }: { storyId: string; tab?: string; item?: string }) {
   const story = useQuery(api.stories.get, { storyId });
@@ -37,7 +39,10 @@ export function StoryPage({ storyId, tab, item }: { storyId: string; tab?: strin
       </div>
     );
   }
-  const view = VIEWS.includes(tab as StoryView) ? (tab as StoryView) : story.stage === "script" ? "script" : "thread";
+  // A story has a script and a remake has a source; a link to the other one lands on its own.
+  const setup = firstStage(story.kind) as "script" | "source";
+  const asked = VIEWS.includes(tab as StoryView) ? (tab as StoryView) : isSetupStage(story.stage) ? setup : "thread";
+  const view = asked === "script" || asked === "source" ? setup : asked;
   return (
 <StoryLayout story={story} view={view} item={item} />
   );
@@ -57,7 +62,7 @@ function StoryLayout({ story, view, item }: { story: StoryData; view: StoryView;
   const counts = { images: video?.imageCount, notes: video?.noteCount };
 
   const onStage = (stage: StageId) => {
-    if (stage === "script") return navigate(`${base}/script`);
+    if (isSetupStage(stage)) return navigate(`${base}/${stage}`);
     if (view !== "thread") navigate(`${base}/thread`);
     setTimeout(() => scrollToStage(stage), view === "thread" ? 0 : 120);
   };
@@ -89,8 +94,10 @@ function StoryLayout({ story, view, item }: { story: StoryData; view: StoryView;
           <div className="relative flex min-h-0 flex-1 flex-col">
             {view === "thread" ? (
               <Thread story={story} />
+            ) : view === "source" ? (
+              <SourcePage story={story} />
             ) : view === "script" ? (
-              <DocPage docId={story.docId} embedded />
+              story.docId && <DocPage docId={story.docId} embedded />
             ) : video ? (
               <StudioTabs video={video as VideoData} tab={view} item={item} paths={paths} embedded />
             ) : (
@@ -134,8 +141,8 @@ function StagePill({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  const steps = STAGES.length - 1;
-  const n = Math.min(stageIndex(story.stage) + 1, steps);
+  const steps = stagesOf(story.kind).length - 1;
+  const n = Math.min(stageIndex(story.stage, story.kind) + 1, steps);
   const tone = STATE_TONE[story.state];
   return (
     <>
@@ -202,7 +209,10 @@ function StoryMenu({ story }: { story: StoryData }) {
       {open && (
         <Popover anchor={ref} onClose={() => setOpen(false)} placement="bottom-end" className="w-60 p-1">
           <div className="px-2.5 py-1.5 text-xs text-muted">
-            Folder: <span className="font-mono">short-stories/{story.slug}</span>
+            Folder:{" "}
+            <span className="font-mono">
+              {story.kind === "remake" ? `make_real/work/${story.slug}` : `short-stories/${story.slug}`}
+            </span>
             {story.latestDuration ? ` · latest cut ${timecode(story.latestDuration)}` : ""}
           </div>
           <div className="my-1 h-px bg-line" />
@@ -236,7 +246,8 @@ function StoryMenu({ story }: { story: StoryData }) {
           <div className="p-5">
             <h2 className="font-semibold">Start the director on a fresh session?</h2>
             <p className="mt-1 text-sm text-muted">
-              It forgets this conversation and catches up from the story's folder and README. The thread stays.
+              It forgets this conversation and catches up from the {story.kind === "remake" ? "song's" : "story's"} folder
+              and README. The thread stays.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setConfirmNew(false)} className="h-9 rounded-xl px-4 text-sm hover:bg-surface-2">

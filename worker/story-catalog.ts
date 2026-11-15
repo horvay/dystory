@@ -99,6 +99,8 @@ async function loadEntries(convex: ConvexClient, current?: { docId?: string; slu
   const entries: Entry[] = [];
   for (const s of live) {
     skip.add(s.slug);
+    // A remake has no screenplay to read.
+    if (s.kind === "remake") continue;
     const folder = join(STORIES_DIR, s.slug);
     entries.push({
       slug: s.slug,

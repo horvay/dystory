@@ -192,7 +192,9 @@ function Empty({ story }: { story: StoryData }) {
       <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
         {story.stage === "script"
           ? "Once the script is ready, start production. The director voices it, makes the stills, animates them, and shows you everything here to approve."
-          : "Everything it makes and asks shows up here. Write to it any time."}
+          : story.stage === "source"
+            ? "Once the source is set, start the remake. The director maps the shots, casts them, makes a live-action still for each one, renders them, and shows you everything here to approve."
+            : "Everything it makes and asks shows up here. Write to it any time."}
       </p>
     </div>
   );

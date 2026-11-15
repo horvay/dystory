@@ -16,11 +16,12 @@ import {
   Search,
   Trash2,
   UserRound,
+  WandSparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { stageInfo } from "../../shared/stages";
-import { NewStoryDialog, STATE_LABEL, STATE_TONE } from "../story/stageUi";
+import { NewRemakeDialog, NewStoryDialog, STATE_LABEL, STATE_TONE } from "../story/stageUi";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
@@ -329,12 +330,21 @@ type StoryItem = NonNullable<ReturnType<typeof useQuery<typeof api.stories.list>
 /** Stories in production first, then the rest; each with its stage and who has the ball. */
 function StoryList({ stories, loading }: { stories: StoryItem[]; loading: boolean }) {
   const [, params] = useRoute("/s/:id/*?");
+  const [newRemake, setNewRemake] = useState(false);
   if (loading) return null;
   return (
     <div className="mt-1">
-      <div className="flex h-8 items-center pl-2">
+      <div className="flex h-8 items-center justify-between pl-2">
         <span className="text-[11px] font-semibold tracking-wider text-muted uppercase">Stories</span>
+        <button
+          onClick={() => setNewRemake(true)}
+          title="Remake a cartoon video as live action"
+          className="flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-muted hover:bg-surface-2 hover:text-ink"
+        >
+          <WandSparkles size={13} /> Remake
+        </button>
       </div>
+      {newRemake && <NewRemakeDialog onClose={() => setNewRemake(false)} />}
       {stories.length === 0 && <p className="px-3 py-1 text-sm text-muted">No stories yet.</p>}
       <div className="space-y-0.5">
         {stories.map((st) => (
@@ -350,7 +360,10 @@ function StoryList({ stories, loading }: { stories: StoryItem[]; loading: boolea
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{st.title}</span>
               <span className="block truncate text-xs text-muted">
-                {st.stage === "done" ? "Published" : `${stageInfo(st.stage).label} · ${STATE_LABEL[st.state]}`}
+                {st.kind === "remake" ? "Remake · " : ""}
+                {st.stage === "done"
+                  ? "Published"
+                  : `${stageInfo(st.stage).label} · ${st.stage === "source" ? "Setting up" : STATE_LABEL[st.state]}`}
               </span>
             </span>
           </Link>

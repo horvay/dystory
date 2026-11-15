@@ -1,6 +1,11 @@
 // The stages a story goes through, from the first draft to a published Short.
 // Shared by the app (the stage bar) and the director (what to tell the AI
 // when a stage starts).
+//
+// There are two kinds of story, each with its own stage list:
+// - "story": a script the director voices, draws and animates (STAGES)
+// - "remake": a cartoon video remade as live action in ~/Music/make_real
+//   (REMAKE_STAGES). It has no script; it starts from a source video.
 export const STAGES = [
   {
     id: "script",
@@ -70,16 +75,107 @@ export const STAGES = [
   },
 ] as const;
 
-export type StageId = (typeof STAGES)[number]["id"];
-export const STAGE_IDS = STAGES.map((s) => s.id) as StageId[];
+/**
+ * A remake: a cartoon video (a link or a file) remade as live action on the
+ * depth route in ~/Music/make_real. Its last stages share their ids with a
+ * story's, with goals of their own.
+ */
+export const REMAKE_STAGES = [
+  {
+    id: "source",
+    label: "Source",
+    hint: "The cartoon video to remake, and what to watch out for.",
+    goal: "",
+  },
+  {
+    id: "breakdown",
+    label: "Breakdown",
+    hint: "Scene map, depth video, lyrics, and the cast.",
+    goal: `Set the song up and work out who is in it. The source and the notes people gave are in BRIEF.md beside the song root. A link: download it with yt-dlp at the best quality it has. A file: use it where it is. Look at the source's real picture area and choose the 16:9 crop, then run scripts/depth-route/new-song.sh and follow scripts/depth-route/README.md steps 1 to 3: extract every frame, write the scene map (units.tsv, one unit per camera setup, editorial spans marked), build the depth video (./dr depth-all), read every audit row (./dr audit-sheets), and transcribe with WhisperX large-v3. Then the cast: name every character who appears, and match each to profiles/<name>/ (the active profile image and its direction: who sings, the standing rules). A character without a profile gets one: have chatgpt-image-maker draw a live-action portrait from clean cartoon frames of that character, check it yourself, and install it with new-profile.sh. Post each character's profile (post_image) with a caption naming the character, whether the profile already existed or is new, and whether they sing in this video. Write a note titled "Scene map" with one line per unit: its time in the video, what happens, who is in it. Then call request_review. People are approving the cast: the faces and who sings. Make no opening stills before that.`,
+  },
+  {
+    id: "stills",
+    label: "Stills",
+    hint: "One live-action opening still per shot, beside its cartoon frame.",
+    goal: `Make the opening still of every unit. Write prompts/song.ts and stills/desc.tsv from the audit rows (rules: docs/PROMPTING-DEPTH.md; cast direction from each profile.json, plus anything people said in the brief or when they approved the cast) until ./dr prompts prints no ERROR and you have read every WARN. ./dr cartoons, then have chatgpt-image-maker make stills/UNIT/chatgpt-1.png for every unit. Check each still against its cartoon frame on ./dr still-sheets before anyone sees it: framing, person count, eyes, mouth, clothes, stray lettering, hands. Redo the ones that fail (a new still, or a single-image edit). When every unit has a still you would approve, post one image per unit (post_image): the cartoon frame on the left and the still on the right, side by side, captioned with the unit and its time in the video ("Scene 07, 0:21: Jem at the mic"). Then call request_review. Don't run ./dr approve and don't render anything before people approve the stills.`,
+  },
+  {
+    id: "render",
+    label: "Render",
+    hint: "Every shot rendered (MiniMax H3 on the B70), reviewed and retaken.",
+    goal: `The stills are approved: run ./dr approve on every unit (use the still people approved, including any edit), then render. Start the driver with start_job ("./dr drive" in the song root; it submits its own B70 jobs one at a time, so leave gpu unset) and start a second job "./dr wait 6" so you are woken as takes land. On each wake: ./dr queue, hand each group of 6 to a take-reviewer agent, ./dr queue done for the ones reviewed, look yourself at every take a reviewer fails, and retake those (./dr stage UNIT, ./dr retake ATTEMPT UNIT...): change the smallest input the evidence points to and keep the seed. Start ./dr wait again while units are missing. Every 5 newly passed units, build a partial of all passed footage (./dr partial) and post its compressed copy as a cut so people can watch the song come together; comments on a partial are the grade, fix them before going on. When every unit has a PASS and ./dr check-takes shows no FAIL, post the cut of every unit in source order and call request_review.`,
+  },
+  {
+    id: "final",
+    label: "Final cut",
+    hint: "Transitions, titles, loudness and QA.",
+    goal: `Build the finished cut. Rebuild every editorial span of the cartoon in edit.sh and editorial/fx.sh (wipes, dissolves, fades, titles with their exact wording, case, timing and placement; test each effect with ./dr try-fx, and both shots under an effect keep moving), then ./dr assemble. Verify before posting: the frame count against the source span, 1920x1080, loudness near -14 LUFS with true peak near -1.5 dBTP, every transition and title at full resolution, and six even frames of each scene against the cartoon. Post the compressed copy of the master (post_cut) and call request_review. Keep the master in output/.`,
+  },
+  {
+    id: "packaging",
+    label: "Packaging",
+    hint: "Title, thumbnail, description.",
+    goal: `Make the packaging the way docs/PUBLISHING.md describes: about 10 thumbnail candidates (a ChatGPT picture of a moment from the cut with the title sign laid over it, 1280x720, each checked against the cast direction), the title, the description and the tags. Post every thumbnail candidate (post_image) so people can pick, and write a note titled "Packaging" with the title, description and tags. Then call request_review.`,
+  },
+  {
+    id: "upload",
+    label: "Upload",
+    hint: "Publish the video to YouTube.",
+    goal: `Upload the approved master to YouTube following docs/PUBLISHING.md (the master from ./dr assemble, never a compressed review copy). Before anything goes public, ask which channel and which visibility or schedule to use, and wait for the answer in the thread. Run with --dry-run first. Report the video URL when done.`,
+  },
+  {
+    id: "short",
+    label: "Short",
+    hint: "The vertical 1080x1920 version.",
+    goal: `Make the vertical 1080x1920 Short of the approved master following scripts/shorts/README.md (the title sign on top, the whole picture letterboxed, word-by-word lyric captions under it), post it for review, and upload it only after it is approved and the visibility has been confirmed in the thread.`,
+  },
+  {
+    id: "done",
+    label: "Done",
+    hint: "Published.",
+    goal: "",
+  },
+] as const;
 
-export const stageInfo = (id: StageId) => STAGES.find((s) => s.id === id)!;
-export const stageIndex = (id: StageId) => STAGE_IDS.indexOf(id);
-export const nextStage = (id: StageId): StageId => STAGE_IDS[Math.min(stageIndex(id) + 1, STAGE_IDS.length - 1)]!;
+export type StageId = (typeof STAGES)[number]["id"] | (typeof REMAKE_STAGES)[number]["id"];
+export type StoryKind = "story" | "remake";
+export const STORY_KINDS = ["story", "remake"] as const;
+
+type StageInfo = { id: StageId; label: string; hint: string; goal: string };
+const PIPELINES: Record<StoryKind, readonly StageInfo[]> = { story: STAGES, remake: REMAKE_STAGES };
+
+/** Every stage id of either kind, for the database's validator. */
+export const STAGE_IDS = [...new Set([...STAGES, ...REMAKE_STAGES].map((s) => s.id))] as StageId[];
+
+/** The stages a story of this kind goes through, in order. A missing kind is a story. */
+export const stagesOf = (kind?: StoryKind): readonly StageInfo[] => PIPELINES[kind ?? "story"];
+
+/**
+ * A stage's label, hint and goal. Pass the story's kind for a goal: the last
+ * stages share an id between the kinds and differ in what they ask for.
+ * Without a kind (a label for a cut or a divider) either kind's entry does.
+ */
+export const stageInfo = (id: StageId, kind?: StoryKind): StageInfo =>
+  (kind ? stagesOf(kind).find((s) => s.id === id) : undefined) ??
+  STAGES.find((s) => s.id === id) ??
+  REMAKE_STAGES.find((s) => s.id === id)!;
+
+export const stageIndex = (id: StageId, kind?: StoryKind) => stagesOf(kind).findIndex((s) => s.id === id);
+
+export const nextStage = (id: StageId, kind?: StoryKind): StageId => {
+  const stages = stagesOf(kind);
+  return stages[Math.min(stageIndex(id, kind) + 1, stages.length - 1)]!.id;
+};
+
+/** The first stage of a kind: people prepare it (a script, a source) before the director starts. */
+export const firstStage = (kind?: StoryKind): StageId => stagesOf(kind)[0]!.id;
+
+/** Whether this is a stage people work on before production: the script, or a remake's source. */
+export const isSetupStage = (id: StageId) => id === "script" || id === "source";
 
 /**
  * Where a story is within its stage.
- * - writing: the script stage, people and the script assistant at work
+ * - writing: the first stage (script or source), people at work
  * - working: the production AI is making this stage's work
  * - review: the work is posted and waits for comments or approval
  * - waiting: the production AI asked a question or hit a problem it can't solve alone

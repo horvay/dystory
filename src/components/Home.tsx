@@ -1,5 +1,5 @@
 import { useQuery } from "convex/react";
-import { Clapperboard, CornerDownRight, Film, PanelLeft, Plus } from "lucide-react";
+import { Clapperboard, CornerDownRight, Film, PanelLeft, Plus, WandSparkles } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { api } from "../../convex/_generated/api";
@@ -12,7 +12,7 @@ import { relativeTime } from "../lib/time";
 import { Avatar } from "./Avatar";
 import { useShell } from "./Shell";
 import { useCreateDoc } from "./useCreateDoc";
-import { NewStoryDialog, StageChip } from "../story/stageUi";
+import { NewRemakeDialog, NewStoryDialog, StageChip } from "../story/stageUi";
 import { timecode } from "../lib/time";
 import { stageInfo } from "../../shared/stages";
 
@@ -28,6 +28,7 @@ export function Home() {
   const { sidebarOpen, toggleSidebar } = useShell();
   const stories = useQuery(api.stories.list, {});
   const [newStory, setNewStory] = useState(false);
+  const [newRemake, setNewRemake] = useState(false);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
@@ -86,6 +87,18 @@ export function Home() {
             <span>
               <span className="block font-medium">New story</span>
               <span className="text-sm text-muted">From a script to a published video</span>
+            </span>
+          </button>
+          <button
+            onClick={() => setNewRemake(true)}
+            className="group flex aspect-video flex-col items-start justify-between rounded-2xl border border-dashed border-line-strong p-4 text-left transition hover:border-ink-2 hover:bg-surface"
+          >
+            <span className="grid size-9 place-items-center rounded-xl bg-ink text-bg transition group-hover:scale-105">
+              <WandSparkles size={18} />
+            </span>
+            <span>
+              <span className="block font-medium">New remake</span>
+              <span className="text-sm text-muted">A cartoon video, remade as live action</span>
             </span>
           </button>
           {stories?.map((st) => (
@@ -220,6 +233,7 @@ export function Home() {
         )}
       </div>
       {newStory && <NewStoryDialog onClose={() => setNewStory(false)} />}
+      {newRemake && <NewRemakeDialog onClose={() => setNewRemake(false)} />}
     </div>
   );
 }
@@ -289,7 +303,9 @@ function StoryCard({ story, now }: { story: StoryItem; now: number }) {
           />
         ) : (
           <div className="absolute inset-0 overflow-hidden p-4">
-            <p className="line-clamp-5 font-serif text-sm leading-relaxed text-white/45">{story.snippet || "No script yet."}</p>
+            <p className="line-clamp-5 font-serif text-sm leading-relaxed break-words text-white/45">
+              {story.snippet || (story.kind === "remake" ? "No source yet." : "No script yet.")}
+            </p>
           </div>
         )}
         {!cover && <Film size={22} className="absolute right-3 bottom-3 text-white/25" />}

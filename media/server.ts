@@ -26,7 +26,12 @@
 //
 // The browser makes the thumbnail (it already decoded the image to measure
 // it, and it applies phone photos' rotation), so the server only stores.
-import { mkdir, rename, rm, stat, appendFile } from "node:fs/promises";
+//
+// Remakes can adopt a song that was started outside the app. Only this
+// server sees the disk, so it lists the song folders make_real has:
+//
+//   GET /media/remakes   -> {songs: [{slug, title, units}]}
+import { mkdir, readdir, readFile, rename, rm, stat, appendFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const PORT = Number(process.env.MEDIA_PORT || 5191);
@@ -36,6 +41,8 @@ const FILES = join(DATA, "files");
 const THUMBS = join(DATA, "thumbs");
 const IMAGES = join(DATA, "images");
 const AUDIO = join(DATA, "audio");
+// The make_real repo: each song's depth-route root is work/<slug>/depth.
+const REMAKE_WORK = join(resolve(process.env.REMAKE_DIR || join(process.env.HOME ?? "", "Music/make_real")), "work");
 const CHUNK_SIZE = 16 * 1024 * 1024;
 const IMAGE_MAX = 60 * 1024 * 1024;
 const ID = /^[0-9a-f-]{36}$/;
@@ -215,6 +222,35 @@ async function storeAudio(req: Request, name: string) {
   return json({ file, size: blob.size, duration: Number(out.trim()) || 0 });
 }
 
+/** The songs under make_real's work/ that have a depth-route root, newest first. */
+async function remakeSongs() {
+  let names: string[] = [];
+  try {
+    names = await readdir(REMAKE_WORK);
+  } catch {
+    return [];
+  }
+  const songs = [];
+  for (const slug of names) {
+    const root = join(REMAKE_WORK, slug, "depth");
+    let env: string;
+    try {
+      env = await readFile(join(root, "song.env"), "utf8");
+    } catch {
+      continue; // not a depth-route song
+    }
+    const title = env.match(/^REVIEW_TITLE="?([^"\n]+)"?/m)?.[1]?.replace(/\s*-\s*depth remake.*$/i, "").trim();
+    const units = await readFile(join(root, "units.tsv"), "utf8")
+      .then((t) => t.split("\n").filter((l) => l.trim() && !l.startsWith("#")).length)
+      .catch(() => 0);
+    const changed = await stat(join(root, "README.md"))
+      .then((st) => st.mtimeMs)
+      .catch(() => 0);
+    songs.push({ slug, title: title || slug.replace(/-/g, " "), units, changed });
+  }
+  return songs.sort((a, b) => b.changed - a.changed);
+}
+
 function serveFile(req: Request, path: string, type: string, download?: string) {
   const file = Bun.file(path);
   const size = file.size;
@@ -293,6 +329,8 @@ Bun.serve({
         return json({ ok: true });
       }
     }
+
+    if (kind === "remakes" && !id && req.method === "GET") return json({ songs: await remakeSongs() });
 
     if (kind === "images" && !id && req.method === "POST") return storeImage(req);
 

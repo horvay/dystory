@@ -9,6 +9,7 @@ import {
   ChevronUp,
   CircleStop,
   Clapperboard,
+  FileVideo,
   Hourglass,
   LoaderCircle,
   Play,
@@ -42,6 +43,9 @@ const APPROVE: Partial<Record<StageId, string>> = {
   packaging: "Approve the packaging",
   upload: "Approve the upload",
   short: "Approve the Short",
+  breakdown: "Approve the cast",
+  stills: "Approve the stills",
+  render: "Approve the footage",
 };
 export const approveLabel = (stage: StageId) => APPROVE[stage] ?? `Approve ${stageInfo(stage).label}`;
 
@@ -112,8 +116,42 @@ export function DecisionBar({ story, composer }: { story: StoryData; composer: b
         </Bar>
       </>
     );
+  } else if (story.stage === "source") {
+    // A remake before it starts: it needs exactly one thing to remake.
+    const src = story.source;
+    const ready = !!src && [src.url, src.file, src.adopt].filter(Boolean).length === 1;
+    bar = (
+      <Bar
+        glow={ready ? "accent" : undefined}
+        icon={<FileVideo size={18} />}
+        title="Source"
+        text={
+          src?.adopt
+            ? "Say where the song stands, then bring it in. The director picks it up from its folder."
+            : ready
+              ? "Ready. The director maps the shots and shows you the cast first."
+              : "Give it a link or a video file. The director takes it from there and shows you each stage here."
+        }
+      >
+        {ready ? (
+          <BigButton onClick={() => setApproving(true)}>
+            <Play size={16} /> {src?.adopt ? "Bring it in" : "Start the remake"}
+          </BigButton>
+        ) : (
+          // From the thread; on the Source page itself the form is right above.
+          composer && (
+            <button
+              onClick={() => navigate(`/s/${story._id}/source`)}
+              className="flex h-11 items-center gap-2 rounded-xl border border-line-strong px-4 text-sm font-semibold hover:bg-surface-2"
+            >
+              Set the source
+            </button>
+          )
+        )}
+      </Bar>
+    );
   } else if (story.state === "done") {
-    bar = <Bar icon={<Check size={18} />} title="Published" text="The story is done." />;
+    bar = <Bar icon={<Check size={18} />} title="Published" text={`The ${story.kind === "remake" ? "remake" : "story"} is done.`} />;
   } else if (review) {
     bar = (
       <Bar
