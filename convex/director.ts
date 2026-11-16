@@ -137,6 +137,7 @@ export const claim = mutation({
       turnId,
       kind: turn.kind,
       prompt: turn.prompt,
+      attachments: turn.attachments,
       requesterName: requester ? requester.name : null,
       story: {
         _id: story._id,

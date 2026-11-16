@@ -11,6 +11,7 @@ import {
   Clapperboard,
   FileVideo,
   Hourglass,
+  ImagePlus,
   LoaderCircle,
   Play,
   Send,
@@ -25,6 +26,7 @@ import { useToast } from "../components/Toast";
 import { DictationStatus } from "../panels/AiPanel";
 import { cn, useNow } from "../lib/hooks";
 import { useMe } from "../lib/identity";
+import { ImageError, isImageFile, uploadImage, type ImageInfo } from "../lib/images";
 import { relativeTime, timecode } from "../lib/time";
 import { useDictation } from "../lib/useDictation";
 import { stageInfo, type StageId } from "../../shared/stages";
@@ -375,7 +377,12 @@ function PendingNotes({
 // ---------------------------------------------------------------------------
 // The box for writing to the director, or for why it's not good. Notes on a
 // cut moment or images are written where they're clicked (NoteBox), not here.
+// Images can be pasted, dropped or picked: they go with the message, and the
+// director opens them.
 // ---------------------------------------------------------------------------
+
+/** An image being added to the message: shown from the local file while it uploads. */
+type Attached = { id: number; name: string; preview: string; info?: ImageInfo };
 
 function Composer({
   story,
@@ -392,7 +399,33 @@ function Composer({
   const sendBack = useMutation(api.feedback.sendBack);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [attached, setAttached] = useState<Attached[]>([]);
+  const [dropping, setDropping] = useState(false);
+  const nextId = useRef(1);
+  const picker = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+
+  const addImages = (files: File[]) => {
+    for (const file of files.filter(isImageFile)) {
+      const id = nextId.current++;
+      const preview = URL.createObjectURL(file);
+      setAttached((a) => [...a, { id, name: file.name, preview }]);
+      uploadImage(file)
+        .then((info) => setAttached((a) => a.map((x) => (x.id === id ? { ...x, info } : x))))
+        .catch((err) => {
+          URL.revokeObjectURL(preview);
+          setAttached((a) => a.filter((x) => x.id !== id));
+          toast({ message: err instanceof ImageError ? err.message : `Couldn't upload ${file.name}.` });
+        });
+    }
+  };
+  const removeImage = (id: number) =>
+    setAttached((a) => {
+      const gone = a.find((x) => x.id === id);
+      if (gone) URL.revokeObjectURL(gone.preview);
+      return a.filter((x) => x.id !== id);
+    });
+  const uploading = attached.some((a) => !a.info);
   const dictation = useDictation({
     onText: (t) => {
       setText((p) => (p.trim() ? `${p.trimEnd()} ${t}` : t));
@@ -412,21 +445,28 @@ function Composer({
     el.style.overflowY = el.scrollHeight > 200 ? "auto" : "hidden";
   }, [text]);
 
-  const canSend = !!text.trim();
+  const canSend = (!!text.trim() || attached.length > 0) && !uploading;
 
   const submit = async () => {
     if (!canSend || busy) return;
     const body = text.trim();
+    const images = attached.flatMap((a) =>
+      a.info
+        ? [{ file: a.info.file, thumb: a.info.thumb, fileName: a.info.fileName, width: a.info.width, height: a.info.height }]
+        : [],
+    );
     setBusy(true);
     try {
       if (notGood) {
-        await sendBack({ storyId: story._id, userId: me._id, text: body });
+        await sendBack({ storyId: story._id, userId: me._id, text: body, images: images.length ? images : undefined });
         onNotGoodDone();
         toast({ message: "Sent back to the director with your notes." });
       } else {
-        await send({ storyId: story._id, userId: me._id, text: body });
+        await send({ storyId: story._id, userId: me._id, text: body, images: images.length ? images : undefined });
       }
       setText("");
+      attached.forEach((a) => URL.revokeObjectURL(a.preview));
+      setAttached([]);
     } catch (err) {
       toast({ message: err instanceof Error ? err.message : "Couldn't send that." });
     } finally {
@@ -443,9 +483,26 @@ function Composer({
 
   return (
     <div
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDropping(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setDropping(false)}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDropping(false);
+        addImages([...e.dataTransfer.files]);
+      }}
       className={cn(
         "rounded-2xl border bg-surface transition",
-        notGood ? "border-danger/50 ring-4 ring-danger/10" : "border-line focus-within:border-line-strong",
+        dropping
+          ? "border-accent ring-4 ring-accent/15"
+          : notGood
+            ? "border-danger/50 ring-4 ring-danger/10"
+            : "border-line focus-within:border-line-strong",
       )}
     >
       {notGood && (
@@ -458,12 +515,59 @@ function Composer({
         </div>
       )}
       <DictationStatus dictation={dictation} />
+      {attached.length > 0 && (
+        <ul className="flex flex-wrap gap-2 px-3 pt-3">
+          {attached.map((a) => (
+            <li key={a.id} className="group relative size-16 overflow-hidden rounded-xl border border-line bg-surface-2" title={a.name}>
+              <img src={a.preview} alt={a.name} className={cn("size-full object-cover", !a.info && "opacity-40")} />
+              {!a.info && (
+                <span className="absolute inset-0 grid place-items-center">
+                  <LoaderCircle size={18} className="animate-spin text-accent" />
+                </span>
+              )}
+              <button
+                onClick={() => removeImage(a.id)}
+                className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded-full bg-black/70 text-white"
+                aria-label={`Remove ${a.name}`}
+              >
+                <X size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex items-end gap-2 p-2">
+        <button
+          onClick={() => picker.current?.click()}
+          title="Add an image for the director to look at. You can also paste or drop one."
+          aria-label="Add an image"
+          className="grid size-10 shrink-0 place-items-center rounded-xl text-muted hover:bg-surface-2 hover:text-ink"
+        >
+          <ImagePlus size={18} />
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            addImages([...(e.target.files ?? [])]);
+            e.target.value = "";
+          }}
+        />
         <textarea
           ref={input}
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            // A pasted picture (a screenshot, a copied image) goes along as an attachment; text pastes as usual.
+            const files = [...e.clipboardData.files].filter(isImageFile);
+            if (!files.length) return;
+            e.preventDefault();
+            addImages(files);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();

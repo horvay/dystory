@@ -627,3 +627,65 @@ describe("remakes", () => {
     await expect(t.mutation(api.stories.setStage, { storyId, userId, stage: "breakdown" })).rejects.toThrow(/isn't a stage/);
   });
 });
+
+describe("images attached to a message", () => {
+  const image = (n: number) => ({
+    file: `0000000${n}-aaaa-4bbb-8ccc-000000000000.png`,
+    thumb: `0000000${n}-aaaa-4bbb-8ccc-000000000000.thumb.webp`,
+    fileName: `raya-${n}.png`,
+    width: 1024,
+    height: 1536,
+  });
+
+  test("they go to the director with the message and show in the thread", async () => {
+    const { t, userId, storyId, claimNext } = await setup();
+    await t.mutation(api.stories.approve, { storyId, userId });
+    await finishTurn(t);
+    await t.mutation(api.turns.send, { storyId, userId, text: "Use this face for Raya", images: [image(1), image(2)] });
+    const job = await claimNext();
+    expect(job.prompt).toContain("Use this face for Raya");
+    expect(job.attachments?.map((a) => a.fileName)).toEqual(["raya-1.png", "raya-2.png"]);
+    const turns = await t.query(api.turns.list, { storyId });
+    expect(turns.at(-1)!.attachments).toHaveLength(2);
+  });
+
+  test("an image with no text is still a message", async () => {
+    const { t, userId, storyId } = await setup();
+    const turnId = await t.mutation(api.turns.send, { storyId, userId, text: "  ", images: [image(1)] });
+    expect(turnId).not.toBeNull();
+    const [turn] = await t.query(api.turns.list, { storyId });
+    expect(turn!.display).toBe("");
+    expect(turn!.prompt).toContain("only the attached images");
+    // Nothing at all is still nothing.
+    expect(await t.mutation(api.turns.send, { storyId, userId, text: "  " })).toBeNull();
+  });
+
+  test("only the media server's own file names are accepted", async () => {
+    const { t, userId, storyId } = await setup();
+    await expect(
+      t.mutation(api.turns.send, { storyId, userId, text: "look", images: [{ ...image(1), file: "../../etc/passwd" }] }),
+    ).rejects.toThrow(/didn't upload properly/);
+    await expect(
+      t.mutation(api.turns.send, { storyId, userId, text: "look", images: Array.from({ length: 13 }, () => image(1)) }),
+    ).rejects.toThrow(/At most 12/);
+  });
+
+  test("Not good can carry images that show what's meant", async () => {
+    const { t, userId, storyId, claimNext, finish } = await setup();
+    await t.mutation(api.stories.approve, { storyId, userId });
+    const first = await claimNext();
+    await t.mutation(api.director.requestReview, { turnId: first.turnId, message: "Auditions are up" });
+    await finish(first.turnId);
+    await t.mutation(api.feedback.sendBack, { storyId, userId, text: "", images: [image(3)] });
+    const job = await claimNext();
+    expect(job.kind).toBe("feedback");
+    expect(job.attachments?.[0]!.fileName).toBe("raya-3.png");
+  });
+});
+
+/** Runs the oldest queued turn to its end, the way the worker would. */
+async function finishTurn(t: Awaited<ReturnType<typeof setup>>["t"]) {
+  const [next] = await t.query(api.director.queued, {});
+  const job = await t.mutation(api.director.claim, { turnId: next!._id });
+  await t.mutation(api.director.finish, { turnId: job!.turnId, response: "ok", sessionId: "session-1" });
+}

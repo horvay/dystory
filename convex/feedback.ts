@@ -5,7 +5,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { FEEDBACK_QUIET_MS } from "../shared/director";
 import { stageInfo } from "../shared/stages";
 import { closeRequests } from "./requests";
-import { queueTurn } from "./turns";
+import { attachment } from "./schema";
+import { cleanAttachments, queueTurn, type Attachment } from "./turns";
 
 type Kind = Doc<"feedback">["kind"];
 
@@ -114,7 +115,7 @@ async function flushStory(
   ctx: MutationCtx,
   storyId: Id<"stories">,
   force?: boolean,
-  sentBack?: { userId: Id<"users">; text: string; anchored: boolean },
+  sentBack?: { userId: Id<"users">; text: string; anchored: boolean; attachments?: Attachment[] },
 ) {
     const story = await ctx.db.get(storyId);
     if (!story) return;
@@ -136,6 +137,7 @@ async function flushStory(
         ? `Not good${sentBack.text ? `: ${sentBack.text}` : ""}`
         : `${n} piece${n === 1 ? "" : "s"} of review feedback`,
       requestedBy: sentBack?.userId,
+      attachments: sentBack?.attachments,
       prompt: `${lead}
 
 ${lines.join("\n")}
@@ -160,14 +162,17 @@ export const sendBack = mutation({
     text: v.string(),
     imageIds: v.optional(v.array(v.id("images"))),
     cut: v.optional(v.object({ versionId: v.id("versions"), time: v.number() })),
+    // Images pasted into the box to show what's meant (a reference, a marked-up frame).
+    images: v.optional(v.array(attachment)),
   },
-  handler: async (ctx, { storyId, userId, text, imageIds, cut }) => {
+  handler: async (ctx, { storyId, userId, text, imageIds, cut, images }) => {
     const body = text.trim().slice(0, 5000);
     const anchored = !!imageIds?.length || !!cut;
-    if (!body && !anchored) throw new Error("Say what's wrong");
+    const attachments = cleanAttachments(images);
+    if (!body && !anchored && !attachments) throw new Error("Say what's wrong");
     await addAnchoredNotes(ctx, userId, body || "Not good", imageIds, cut);
     await closeRequests(ctx, storyId, "changes", userId, "review");
-    await flushStory(ctx, storyId, true, { userId, text: body, anchored });
+    await flushStory(ctx, storyId, true, { userId, text: body, anchored, attachments });
   },
 });
 

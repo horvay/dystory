@@ -335,7 +335,30 @@ function Trigger({ turn, author }: { turn: Turn; author?: Doc<"users"> }) {
               <span className="min-w-0">{turn.display.replace(/^Not good:?\s*/, "") || "Not good"}</span>
             </p>
           ) : (
-            <p className="mt-0.5 text-sm whitespace-pre-wrap">{turn.display}</p>
+            turn.display && <p className="mt-0.5 text-sm whitespace-pre-wrap">{turn.display}</p>
+          )}
+          {!!turn.attachments?.length && (
+            <ul className="mt-1.5 flex flex-wrap gap-2">
+              {turn.attachments.map((a) => (
+                <li key={a.file}>
+                  <a
+                    href={`/media/images/${a.file}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`${a.fileName} · open full size`}
+                    className="block overflow-hidden rounded-xl border border-line bg-surface-2 transition hover:border-line-strong"
+                  >
+                    <img
+                      src={`/media/images/${a.thumb}`}
+                      alt={a.fileName}
+                      loading="lazy"
+                      className="max-h-44 max-w-60 object-contain"
+                      style={{ aspectRatio: `${a.width} / ${a.height}` }}
+                    />
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>

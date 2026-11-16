@@ -52,6 +52,7 @@ The make_real documents were written for a director who works alone and posts to
 ## Talking to people
 
 - Your reply at the end of a turn is a message in the thread, read by Greg and his wife, often on a phone. Keep it to two to five sentences: what you did, what is in the card, what you need from them. Plain words, no file paths, no script names, no step lists. Details for later go in the song root's README or a note.
+- People can paste images into a message: a reference, a face they want, a marked-up frame. The turn lists each file's path. Open every one with the Read tool before you answer, and say in your reply what you took from it. Copy one into your work folder when you need it as a file.
 - Taste decisions are theirs: a new character's face, who sings, which thumbnail, the title. Ask with `ask_user` and say the question in your reply too. Don't guess.
 - If someone says they will supply a profile picture themselves, ask where the file is, then install it with `new-profile.sh`.
 - Never publish anything (a YouTube upload, public visibility, a schedule) without an explicit go-ahead in this conversation that names the channel and the visibility. Run the upload with `--dry-run` first.

@@ -121,7 +121,7 @@ function workspace(story: { kind: StoryKind; slug: string }): Workspace {
     };
   }
   const folder = join(STORIES_DIR, story.slug);
-  return { cwd: folder, folder, promptFile: PROMPT_FILE, model: MODEL, effort: EFFORT, dirs: [resolve(STORIES_DIR, "..")] };
+  return { cwd: folder, folder, promptFile: PROMPT_FILE, model: MODEL, effort: EFFORT, dirs: [resolve(STORIES_DIR, ".."), MEDIA_DIR] };
 }
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -166,6 +166,18 @@ async function prepareFolder(job: Job, ws: Workspace) {
   }
 }
 
+/**
+ * Images people attached to the message: where each file is on this machine,
+ * so the AI can open it. Only the worker knows where the media server keeps them.
+ */
+function attachmentNote(job: Job) {
+  const images = job.attachments;
+  if (!images?.length) return "";
+  const keep = job.story.kind === "remake" ? "the song root (or profiles/ for a character's profile)" : "the story folder";
+  const lines = images.map((a) => `- ${join(MEDIA_DIR, "images", a.file)} ("${a.fileName}", ${a.width}x${a.height})`);
+  return `\n\n${images.length === 1 ? "An image is" : `${images.length} images are`} attached to this message. Open ${images.length === 1 ? "it" : "each one"} with the Read tool before you answer. When the work needs one as a file (a reference for a still, a character's look), copy it into ${keep} and use the copy.\n${lines.join("\n")}`;
+}
+
 function buildPrompt(job: Job, ws: Workspace, fresh: boolean) {
   if (job.kind === "compact") return "/compact";
   const kind = job.story.kind;
@@ -176,13 +188,13 @@ function buildPrompt(job: Job, ws: Workspace, fresh: boolean) {
     const intro = fresh
       ? "\n\nThis is the start of your session for this remake. Before doing production work, read AGENTS.md in this repository and the documents it names for the work at hand, then the brief, story_info and the song root's README (if there is one) for where things stand."
       : "";
-    return `${head}${intro}\n\n${job.prompt}`;
+    return `${head}${intro}\n\n${job.prompt}${attachmentNote(job)}`;
   }
   const head = `[Dynastory] Story "${job.story.title}" · stage: ${label} · folder: ${ws.folder} · page: ${page}`;
   const intro = fresh
     ? "\n\nThis is the start of your session for this story. Read the clips guides named in your instructions before doing production work, then check story_info and the story README (if there is one) for where things stand."
     : "";
-  return `${head}${intro}\n\n${job.prompt}`;
+  return `${head}${intro}\n\n${job.prompt}${attachmentNote(job)}`;
 }
 
 async function runTurn(turnId: Id<"turns">) {

@@ -72,6 +72,16 @@ export const remakeSource = v.object({
   notes: v.string(),
 });
 
+// An image someone attached to a message in a story's thread, for the
+// director to look at. The file is on the media server (/media/images/).
+export const attachment = v.object({
+  file: v.string(),
+  thumb: v.string(),
+  fileName: v.string(),
+  width: v.number(),
+  height: v.number(),
+});
+
 // What started a turn of the production AI.
 export const turnKind = v.union(
   v.literal("message"), // someone wrote to it in the story's thread
@@ -350,6 +360,8 @@ export default defineSchema({
     prompt: v.string(),
     // What the thread shows for it (the message, or "Voice-over started").
     display: v.string(),
+    // Images pasted or dropped into the message. The worker gives the AI their paths.
+    attachments: v.optional(v.array(attachment)),
     requestedBy: v.optional(v.id("users")),
     status: aiStatus,
     response: v.string(),
